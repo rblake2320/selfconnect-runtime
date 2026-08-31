@@ -198,6 +198,13 @@ currently-unproven claim.
   constraint. `registry.reload(name)` hot-reloads by re-verifying the installed
   package and returning its fresh manifest without a restart, refusing tampered
   content. `tests/test_manifest_reqs.py` (+7). Closes C6.
+- **C3 — Deterministic replay (§3.1).** `scr/replay.py` re-executes a session
+  into a fresh store under the SAME session id and compares ledger heads (the
+  store now accepts an explicit session id; idem keys bind to it). Equal heads
+  = faithful reproduction; unequal = divergence surfaced. `tests/test_replay.py`
+  (+4): replay reproduces an identical ledger chain; divergent model output
+  yields a different head; replay matches a recorded session and a tampered
+  script does not; same-session-id required. Closes C3.
 
 ## Content migration (SelfConnect → `.scpkg`)
 

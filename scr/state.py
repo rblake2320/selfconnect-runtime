@@ -113,8 +113,11 @@ class Store:
         self.conn.close()
 
     # -- sessions -------------------------------------------------------
-    def create_session(self) -> str:
-        sid = uuid.uuid4().hex
+    def create_session(self, session_id: Optional[str] = None) -> str:
+        # An explicit id supports deterministic replay (§3.1): re-running into a
+        # fresh store under the SAME session id reproduces the same idem keys
+        # and therefore the same ledger hash chain.
+        sid = session_id or uuid.uuid4().hex
         self.conn.execute(
             "INSERT INTO sessions(id, created_at) VALUES(?,?)", (sid, time.time())
         )
