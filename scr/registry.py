@@ -32,6 +32,14 @@ class InstalledPackage:
     key_id: str
 
 
+@dataclass
+class UpdateOutcome:
+    promoted: bool
+    version: Optional[str]
+    reason: str
+    selftests: Optional[dict]
+
+
 class PackageRegistry:
     def __init__(self, home: str, keystore: Keystore,
                  revocations: Optional[RevocationList] = None):
@@ -90,6 +98,39 @@ class PackageRegistry:
             return LoadResult(False, "missing_on_disk",
                               f"installed package file gone: {inst.path}")
         return verify_package(inst.path, self.keystore, self.revocations)
+
+    # ---------------------------------------- shadow-install updates (§6)
+    def shadow_update(self, scpkg_path: str, adapter) -> "UpdateOutcome":
+        """Update a package the safe way: verify → shadow-install → run the
+        package self-tests against the model → promote only on pass. On any
+        failure the currently-installed version stays active (rollback) and the
+        shadow is discarded."""
+        res = verify_package(scpkg_path, self.keystore, self.revocations)
+        if not res.ok:
+            return UpdateOutcome(False, None, f"verify failed: {res.error}", None)
+
+        shadow = os.path.join(self.dir, f"{res.package}-{res.version}.scpkg.shadow")
+        shutil.copyfile(scpkg_path, shadow)
+        from .loader import run_selftests
+        try:
+            st = run_selftests(shadow, adapter, self.keystore, self.revocations)
+        except Exception as e:  # noqa: BLE001
+            os.unlink(shadow)
+            return UpdateOutcome(False, None, f"self-test error: {e}", None)
+        if not st.get("ok"):
+            os.unlink(shadow)          # discard shadow; active version unchanged
+            return UpdateOutcome(False, res.version, "self-tests failed", st)
+
+        # promote: atomically replace, update the index to the new version
+        dest = os.path.join(self.dir, f"{res.package}-{res.version}.scpkg")
+        os.replace(shadow, dest)
+        from .package import Package
+        with Package(dest) as pkg:
+            key_id_v = (pkg.signature or {}).get("key_id", "")
+        idx = self._load_index()
+        idx[res.package] = {"version": res.version, "path": dest, "key_id": key_id_v}
+        self._save_index(idx)
+        return UpdateOutcome(True, res.version, "promoted", st)
 
     def session_guard(self, name: str):
         """Return a zero-arg callable that re-verifies the package; a

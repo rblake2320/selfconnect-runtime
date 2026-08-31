@@ -183,6 +183,14 @@ currently-unproven claim.
   round-trip; tampered artifact, untrusted key, forged signature all rejected.
   Authenticode signing of the MSI is layered on later with the code-signing
   cert. Closes C15 (MSI Authenticode pending the cert).
+- **C13 — Package shadow-install updates (§6).** `PackageRegistry.shadow_update`:
+  verify → shadow-install (staged `.shadow` copy) → run the package self-tests
+  against the model → promote (atomic replace + index update) only on pass; on
+  verify failure or failing self-tests the currently-installed version stays
+  active (rollback) and the shadow is discarded. `tests/test_shadow_update.py`
+  (+3): passing self-tests promote to the new version; **failing self-tests
+  roll back to the prior version with no leftover shadow**; an untrusted update
+  is rejected and never promoted. Closes C13.
 
 ## Content migration (SelfConnect → `.scpkg`)
 
