@@ -16,3 +16,4 @@ build/
 *.msi
 installers/windows/dist/
 installers/windows/freeze/__pycache__/
+*.wixpdb
