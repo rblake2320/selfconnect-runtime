@@ -1,0 +1,15 @@
+# winget manifest (singleton form). SCAFFOLD — publish only after the MSI is
+# built, signed, and verified on a clean box (STATUS.md OPEN item).
+PackageIdentifier: SelfConnect.Runtime
+PackageVersion: 0.2.0
+PackageName: SelfConnect Runtime
+Publisher: SelfConnect
+License: Proprietary
+ShortDescription: Journaled, capability-enforced self-hosted agent runtime.
+InstallerType: wix
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://REPLACE-WITH-RELEASE-URL/scr-0.2.0-x64.msi
+    InstallerSha256: REPLACE-WITH-SHA256
+ManifestType: singleton
+ManifestVersion: 1.6.0

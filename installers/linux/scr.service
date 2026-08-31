@@ -1,0 +1,22 @@
+# systemd unit for the SelfConnect Runtime service. SCAFFOLD — install path
+# validated in Phase 9's Linux matrix. Loopback-only bind by default.
+[Unit]
+Description=SelfConnect Runtime (journaled agent runtime, loopback only)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/scr/scr-service --host 127.0.0.1 --port 8787
+Restart=on-failure
+RestartSec=3
+User=scr
+Group=scr
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=scr
+RuntimeDirectory=scr
+
+[Install]
+WantedBy=multi-user.target

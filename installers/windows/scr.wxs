@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SelfConnect Runtime MSI (WiX v4). SCAFFOLD — not yet built/verified on a
+     clean box (see STATUS.md: this is an OPEN Definition-of-Done item). Build
+     with the WiX toolset: `wix build scr.wxs -o scr.msi`. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="SelfConnect Runtime" Manufacturer="SelfConnect"
+           Version="0.2.0" UpgradeCode="6F3B2A10-0000-4000-8000-53435230534B"
+           Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="SelfConnect Runtime">
+        <Component Id="ScrPython" Guid="*">
+          <!-- The build packs the frozen scr runtime + a pinned CPython here. -->
+          <File Id="ScrExe" Source="dist\scr.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Windows Service: runs the loopback-only FastAPI service. -->
+    <Component Id="ScrService" Directory="INSTALLFOLDER" Guid="*">
+      <File Id="ScrServiceExe" Source="dist\scr-service.exe" KeyPath="yes" />
+      <ServiceInstall Id="ScrSvcInstall" Name="SelfConnectRuntime"
+                      DisplayName="SelfConnect Runtime"
+                      Description="Journaled agent runtime (loopback only)."
+                      Start="auto" Type="ownProcess" ErrorControl="normal" />
+      <ServiceControl Id="ScrSvcControl" Name="SelfConnectRuntime"
+                      Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+    </Component>
+
+    <Feature Id="Main">
+      <ComponentRef Id="ScrPython" />
+      <ComponentRef Id="ScrService" />
+    </Feature>
+  </Package>
+</Wix>

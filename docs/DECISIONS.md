@@ -96,3 +96,18 @@ approval gate re-enters the model loop for the next turn — correct for a real
 adapter that responds to the tool result in the conversation; the mock in the
 service test is made conversation-aware to model that faithfully rather than
 replaying its script.
+
+## ADR-008 — Vault uses classic DPAPI now; installers scaffolded, build OPEN (2026-08-31)
+
+Design §3.2/§7 name DPAPI-NG for the Windows vault. Classic DPAPI
+(`CryptProtectData`/`CryptUnprotectData`, user scope) is implemented and
+tested for real on this Windows box — the round-trip works and the on-disk
+blob provably excludes the plaintext. DPAPI-NG (NCrypt with protection
+descriptors, machine-scoped sharing) is the stricter target and is deferred to
+Phase 9 hardening; recorded as a deferral, not a silent gap. The installers
+(WiX MSI, winget, systemd, deb) are authored as real scaffolds but their BUILD
+and the "install on a clean box in <30 minutes" Definition-of-Done item are
+marked OPEN in STATUS — the WiX toolset is not present in this environment and
+claiming a working MSI without building and running it on a clean box would
+violate rule 3 (no claim/code divergence). The tested Phase 7 core adds no new
+runtime dependency; `keyring` is an optional POSIX-only extra.

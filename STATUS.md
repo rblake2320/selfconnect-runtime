@@ -11,7 +11,7 @@ Last updated: 2026-08-31.
 | 4 | Package format, signing, loader | ✅ complete | +26 (133 cumulative; 128 pass + 5 platform-skip on Windows) |
 | 5 | Ledger completion + evidence export | ✅ complete | +6 (139 cumulative; 134 pass + 5 platform-skip on Windows) |
 | 6 | Service, API, sessions, orchestration | ✅ complete | +22 (161 cumulative; 155 pass + 6 platform-skip on Windows) |
-| 7 | Vault, config, CLI, installers, updater, licensing | not started | — |
+| 7 | Vault, config, CLI, updater, licensing (installers scaffolded) | ⚠ core complete; installer BUILD open | +27 (188 cumulative; 182 pass + 6 platform-skip on Windows) |
 | 8 | Remaining adapters + ops surface | not started | — |
 | 9 | Hardening + full matrix | not started | — |
 
@@ -132,6 +132,31 @@ Last updated: 2026-08-31.
   journaled events for a job — sufficient and tested); Windows named-pipe
   transport (Phase 9 matrix).
 
+## Phase 7 — implemented / tested / deferred
+
+- Implemented + tested: `scr/vault.py` DPAPI-backed credential vault
+  (Windows, real DPAPI round-trip tested here; ciphertext-at-rest verified;
+  POSIX keyring backend skip-marked); `scr/redaction.py` log-redaction filter
+  (registered secrets + key-shaped patterns scrubbed, non-secrets pass);
+  `scr/license.py` offline Ed25519 licenses (valid / expired→grace-read-only /
+  invalid); `scr/config.py` layered config storing vault refs not secrets;
+  `scr/updater.py` staged update with health-probe + auto-rollback;
+  `scr/cli.py` `scr` CLI (init, model add/list, package verify, ledger
+  export/verify, license status, doctor) — all exercised via `main()`.
+- Tested adversarially: vault blob on disk never contains plaintext; expired
+  license degrades to read-only evidence (never bricks); tampered/wrong-key
+  license rejected; updater rolls back on a failing or throwing health probe
+  (never switches to a bad build); CLI package verify rejects an untrusted
+  package.
+- **OPEN (honestly not verified in this environment):** the MSI/winget/deb
+  BUILD and the "installs on a clean Windows box in <30 min" Definition-of-Done
+  item. Installer manifests (`installers/windows/scr.wxs`, `winget.yaml`,
+  `installers/linux/scr.service`, `debian/control`) are authored scaffolds;
+  building them needs the WiX toolset (absent here) and a clean-box run. Also
+  deferred: DPAPI-NG/NCrypt (ADR-008 — classic DPAPI used and tested now);
+  first-run `scr model add` LIVE smoke test against a real endpoint (needs a
+  configured model); `scr run/service` verbs.
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
@@ -142,6 +167,8 @@ Last updated: 2026-08-31.
 - `uvicorn==0.34.0` — ASGI server for the installed service.
 - `httpx==0.28.1` — TestClient + the REST client the `scr` CLI uses (Phase 7).
 - `websockets==14.1` — WebSocket transport for run-event streaming.
+- Phase 7 tested core added **zero** dependencies (DPAPI via ctypes; license
+  via existing `cryptography`). `keyring` is an OPTIONAL POSIX-only extra.
 - Phase 5 added **zero** dependencies (evidence path is stdlib-only by design,
   so bundles verify with nothing installed).
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,

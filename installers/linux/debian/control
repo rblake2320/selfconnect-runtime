@@ -1,0 +1,11 @@
+Package: selfconnect-runtime
+Version: 0.2.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: SelfConnect <ops@selfconnect.invalid>
+Depends: python3 (>= 3.12)
+Description: SelfConnect Runtime
+ Journaled, capability-enforced self-hosted agent runtime with a
+ tamper-evident, offline-verifiable ledger. SCAFFOLD — .deb build is an
+ OPEN item validated in the Phase 9 Linux matrix.

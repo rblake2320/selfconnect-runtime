@@ -114,9 +114,33 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 | `test_sessions.py` | 4 | Enqueue/run; idempotent enqueue runs once; cancel; **kill mid-run → `recover_all()` quarantines** (no double-fire) |
 | `test_service.py` | 7 | Auth required; RBAC per route; idempotent run; ledger-read role split; bind-guard; WS streams events; approval gate over REST runs the tool exactly once |
 
+## Phase 7 — Vault, config, CLI, updater, licensing (+27 tests, 188 cumulative)
+
+| Module | Responsibility |
+|---|---|
+| `scr/vault.py` | DPAPI credential vault (Windows, tested); POSIX keyring backend |
+| `scr/redaction.py` | Log filter scrubbing secrets + key-shaped tokens |
+| `scr/license.py` | Offline Ed25519 licenses; expiry → read-only evidence (never bricks) |
+| `scr/config.py` | Layered config; model endpoints store a vault ref, not the secret |
+| `scr/updater.py` | Staged update + health-probe + auto-rollback |
+| `scr/cli.py` | `scr` CLI: init, model add/list, package verify, ledger export/verify, license status, doctor |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_vault.py` | 3 | DPAPI round-trip; on-disk blob never contains plaintext; delete |
+| `test_redaction.py` | 5 | Secrets + API-key/hex/Bearer patterns scrubbed; non-secrets pass |
+| `test_license.py` | 5 | Valid; expired→grace (read-only, no runs); tampered/wrong-key/malformed rejected |
+| `test_config.py` | 3 | Layering precedence; vault ref persisted, not the secret |
+| `test_updater.py` | 4 | Switch on healthy probe; roll back on failing/throwing probe |
+| `test_cli.py` | 7 | init/model/package-verify/ledger-verify/license/doctor end-to-end |
+
+**OPEN (not verified here):** the MSI/winget/deb BUILD and "install on a clean
+Windows box in <30 min". `installers/` holds authored scaffolds; building needs
+the WiX toolset (absent in this environment). See STATUS.md.
+
 ## What is NOT yet included
 
-Credential vault, `scr` CLI + first-run wizard, installers (MSI/winget/deb),
-updater, licensing — Phase 7; extra adapters + ops surface — Phase 8;
-full-matrix hardening — Phase 9. No gap between claims and code: everything
-listed above is implemented and tested; everything not listed is not claimed.
+Bedrock/Azure adapters, fallback chains, `scr doctor`/backup, metrics — Phase 8;
+full-matrix hardening + installer build/run — Phase 9. No gap between claims and
+code: everything listed above is implemented and tested; the OPEN items are
+labeled OPEN, not hidden.
