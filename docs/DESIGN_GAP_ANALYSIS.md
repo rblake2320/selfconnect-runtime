@@ -19,7 +19,21 @@ G5 real process-tree cancel (C5), G1 CLI verbs (C19), §5 install-story E2E
 (offline + **live gemma3 on the DGX Spark**), G2 live-Ollama proof + package
 self-tests, shared conformance corpus, newline-exec capability regression,
 `scr doctor` full check set (C17), OllamaAdapter server-error surfacing.
-Suite 230 → **247**. Remaining below stay OPEN and are sequenced by goal impact.
+Then the prioritized §9 backlog, goal-impact order, one gated commit each:
+**P0.1** schema migrations + snapshot/auto-restore (C12), **P0.2** stale-lock
+detection PID+boot-id+heartbeat (C9, incl. a researched `GetTickCount64`
+restype fix), **P0.3** parallel-safe tool exec (C1, real concurrent HTTP),
+**P1.4** parent-revocation chain invalidation + classification ceilings
+(C7+C8, MELD-gated — semantics only, no encoding in docs), **P1.5**
+summarization-on-overflow (C2), **P2.6** seat enforcement (C14) + /metrics
+off-by-default (C18) + log rotation (C20). Suite 230 → **285**.
+
+**Still OPEN** (lower-priority tail + toolchain-blocked): C3 deterministic
+replay, C6 manifest semver/deps/min-runtime + hot reload, C10 backup key
+DPAPI-wrapped, C11 restricted token / seccomp, C13 package shadow-install
+updates, C15 SBOM/reproducible/signed artifacts, C16 named-pipe transport;
+and the MSI build + clean-box step 1 (blocked on the WiX/dotnet toolchain,
+owner-side).
 
 ---
 
