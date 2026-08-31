@@ -137,3 +137,21 @@ documented with compensating controls rather than papered over. The MSI/
 clean-box install remains OPEN in STATUS because it cannot be honestly
 verified in this environment — labeling it OPEN is the rule-3 obligation, not
 a failure to hide.
+
+## ADR-011 — Original design doc placed; supersedes the reconstruction (2026-08-31)
+
+The authoritative original design document ("SelfConnect Runtime — Production
+Design Document", author Ron Blake) was delivered and now lives at
+`docs/SELFCONNECT_RUNTIME_DESIGN.md`, replacing the ADR-001 reconstruction.
+ADR-001 is retained above as history. The original is richer than the
+reconstruction: it carries goals G1–G8 with acceptance bars, a §9 test table
+summing to ~845 (targets labeled "approx", tests-per-claim justification rule
+applies), and named features the reconstruction lacked (parallel-safe tool
+execution, summarization-on-overflow, deterministic replay, classification
+ceilings, parent-revocation chain invalidation, stale-lock detection via
+PID+boot-id+heartbeat, manifest semver/deps/min-runtime, hot reload, schema
+migrations, SBOM/signed artifacts). `docs/DESIGN_GAP_ANALYSIS.md` is
+re-reconciled against it and drives the closure plan, sequenced by goal impact
+(G3/G5 first) per the owner's directive. No prior claim was invalidated by the
+original — the implemented core matches it; the gaps are unbuilt features and
+under-target coverage, each labeled.

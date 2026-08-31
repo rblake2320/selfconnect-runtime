@@ -1,137 +1,123 @@
-# Design Gap Analysis
+# Design Gap Analysis — reconciled against the ORIGINAL
 
-**Scope of this document.** The task was to diff the ADR-001 *reconstruction*
-against the *original* design doc. As of this writing the file at
-`docs/SELFCONNECT_RUNTIME_DESIGN.md` is still the reconstruction (SHA-256
-`58b017bf…`, byte-identical to commit e521cab; it still carries the ADR-001
-provenance banner), and no original was found on disk. The `~600-test` §9
-target and any suite table referenced by the owner exist only in the original,
-which is not yet present here.
+**Status:** the authoritative original design doc is now on disk
+(`docs/SELFCONNECT_RUNTIME_DESIGN.md`, "SelfConnect Runtime — Production Design
+Document", author Ron Blake). This document reconciles the implementation
+against it. The earlier ADR-001 reconstruction is retained as history in
+`docs/DECISIONS.md`; ADR-011 records the supersession.
 
-So this document is what CAN be produced honestly and is what actually drives
-coverage/DoD decisions: a **§-by-§ audit of the current code against the
-design-on-disk and the Definition of Done**, listing every requirement that is
-UNIMPLEMENTED, UNDER-TESTED, or IMPLEMENTED-DIFFERENTLY. When the true original
-arrives, a second pass will reconcile these findings against its exact wording
-and its §9 suite targets (that reconciliation is the only part currently
-blocked).
+Two things the original makes authoritative that the reconstruction lacked:
+1. **Goals G1–G8 with acceptance bars** (§1) — closure is sequenced by these.
+2. **§9 test table summing to ~845** (targets are labeled "approx"; the
+   tests-per-claim justification rule applies — meet the target with real
+   adversarial tests OR justify why fewer fully cover the claim).
 
-Legend: **[MISSING]** not implemented · **[PARTIAL]** implemented narrower than
-the spec · **[UNTESTED]** implemented but a claimed behavior has no test ·
-**[DIVERGENT]** implemented differently than described (with rationale).
+Legend: **[MISSING]** · **[PARTIAL]** · **[UNTESTED]** · **[DIVERGENT]** · **OK**.
 
 ---
 
-## §3.1 Agent kernel and service
+## A. Goal-impact map (drives closure order)
 
-| # | Finding | Class | Evidence / notes |
+| Goal | Bar | State | Gaps blocking the bar |
 |---|---|---|---|
-| 1.1 | Windows **named-pipe transport** for the service | [MISSING] | `scr/service.py` exposes only the FastAPI HTTP/WS app; no named-pipe listener. Design §3.1/§3.7 call it an option. |
-| 1.2 | Session **cancel with full process-tree cleanup** | [PARTIAL] | `SessionManager.cancel` (sessions.py:72) flips job status to `cancelled`; it does NOT kill an in-flight sandbox tree. There is no live `SandboxProc` registry per job, and `run_job` is synchronous, so a truly in-flight run can't be cancelled mid-tool. Design §3.1 says "cancel with full process-tree cleanup." |
-| 1.3 | **Multi-agent orchestration wired into a real run** | [PARTIAL] | `orchestration.py` (Team/attenuate/Mailbox) is unit-tested in isolation, but the kernel/service never actually spawns subagents from a package's `agents/` during a run. Delegation is proven as a function, not as a live team execution. |
-| 1.4 | Service E2E "kill mid-run → restart → resume over the API" | [PARTIAL] | Proven at the SessionManager level (`test_sessions.py` SIGKILL) and at the API level separately; there is no single test that kills the *running service process* mid-run over HTTP and resumes. |
+| **G1** zero-harness install | one installer → working session | ⛔ | MSI build (blocked: WiX/dotnet), missing CLI verbs (`run`, `package install`, `session`) |
+| **G2** customer brings model | 5 backends pass ONE conformance suite | ◑ | 5 adapters exist + a shared contract corpus (test_conformance) — but NOT the behavioral corpus §3.2 names (tool-call fidelity, parallel calls, streaming interruption, long-context, JSON-mode). Live parts need Ollama. |
+| **G3** nothing executes unsigned | verified at load **AND at each execution** | ⛔ **P0** | loader never called at session start; no package install/registry; runtime path never re-verifies. |
+| **G4** everything evidenced | offline-verifiable hash chain | ✅ | complete + tested (ledger, evidence bundle, offline verify). |
+| **G5** crash-safe | kill at any point → resume or clean rollback, no double-fire | ◑ **P0** | recovery ✅; but **cancel is a status-flip, not a process-tree kill** (§3.6 "all child process trees terminated on session cancel"). |
+| **G6** policy-gated | kernel mediates every tool call, deny-by-default, policies are data | ✅ (core) | HITL + attenuation + policy tighten ✅. Missing: classification ceilings; parent-revocation invalidates chain; policy directory loader. |
+| **G7** installable & updatable | signed MSI/winget/.deb, delta updates + rollback | ◑ | updater ✅ (staged+rollback+offline); installers scaffolds only, build blocked; no SBOM/signed artifacts; no schema migrations. |
+| **G8** auditable by a stranger | verify signatures + ledger + egress with no calls to us | ✅ (core) | signatures ✅, ledger offline ✅, `package verify` self-tests ✅; telemetry-off default ✅. Egress-claim doc pending. |
 
-## §3.2 Model gateway, adapters, configuration
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 2.1 | **"All adapters pass one shared conformance corpus"** | [MISSING] | Each adapter has ad-hoc build/parse tests; there is no single corpus asserting the same invariants across Mock/OpenAI/Ollama/Anthropic/Bedrock/Azure. **Closed in this pass** — see `tests/test_conformance.py`. |
-| 2.2 | Config **admin-override file layer** | [PARTIAL] | `Config.override()` is in-memory only; there is no `overrides.json`/admin layer merged at load. Design §3.2 "defaults → config file → admin overrides." |
-| 2.3 | `scr model test` (live smoke test) | [MISSING] | §3.7 lists `scr model add|list|test`; only add/list exist. First-run wizard live smoke test not wired. |
-
-## §3.3 Capability kernel
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 3.1 | Policy **root/exec-rule tightening** | [PARTIAL] | Tightening covers tools + net_hosts only (ADR-004). Roots/exec tightening deferred. |
-| 3.2 | **`policies/*.yaml` directory loader** (merge multiple) | [MISSING] | `Policy.from_file` loads one file; nothing loads/merges a directory of admin policies. |
-| 3.3 | HITL, budget governor | OK | Fully implemented + tested. |
-
-## §3.4 Package format, signing, loader
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 4.1 | **Loader runs at session start** | [MISSING] | `verify_package` exists but the service never calls it; there is no package install/load flow in the runtime path. Design §3.4 "verifies at install AND at every session start." |
-| 4.2 | `scr package install / list / remove` | [MISSING] | Only `scr package verify` exists. |
-| 4.3 | Signing, Merkle, revocation, tamper localization | OK | Fully implemented + tested. |
-
-## §3.5 Durable state, ledger, evidence
-
-All implemented + tested (ledger chain, seals, offline evidence bundle,
-atomic writes, locks). No gap found.
-
-## §3.6 Sandboxed execution + MCP host
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 6.1 | **Streamable-HTTP MCP restart/backoff** | [PARTIAL/UNTESTED] | stdio transport has crash→restart-with-backoff tested; the HTTP client has no restart logic and only a connection-refused test. |
-| 6.2 | MCP **periodic health checks** | [PARTIAL] | Liveness is checked on demand around a call; there is no supervisory health-check loop as §3.6 implies. |
-| 6.3 | Sandbox jail, env isolation, tree-kill | OK | Fully implemented + tested (both OS). |
-
-## §3.7 CLI and API surface
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 7.1 | Missing CLI verbs | [MISSING] | Present: init, model add/list, package verify, ledger export/verify, license status, doctor. **Missing:** `package install/list/remove`, `run`, `sessions list/resume/cancel`, `approve`/`deny`, `service install/start/stop/status`, `backup`/`restore`, `license install`, `model test`. |
-| 7.2 | REST parity for approve/deny/ledger-export | [PARTIAL] | approve/deny exist over REST; `scr` CLI equivalents and a REST `ledger export` route do not. |
-
-## §3.8 Ops surface and observability
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 8.1 | `scr doctor` **full check set** | [PARTIAL] | Checks integrity + model count only (cli.py:110-116). Design §3.8 also wants lock health, package signature status, model endpoint reachability, disk headroom. |
-| 8.2 | **Prometheus `/metrics` endpoint** on the service | [MISSING] | Registry exists (`observability.py`) but no `/metrics` route; §3.8 wants an endpoint (off by default). |
-| 8.3 | JSON logging + redaction + backup/restore | OK | Implemented + tested. |
-
-## §5 Operations
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 5.1 | **Log rotation** | [MISSING] | JSON logs are emitted; no rotating file handler / retention. |
-
-## §6 Installers and updater
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 6a | MSI / winget / deb **build + clean-box install** | [MISSING] | Scaffolds only; build blocked (WiX/dotnet not usable in this environment). DoD item OPEN. |
-| 6b | Updater staged install + rollback + offline files | OK | Implemented + tested. |
-
-## §7 Licensing
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 7a | **Seat accounting in team mode** | [MISSING] | `License.seats` is carried and signed but nothing enforces a seat count at run time. |
-| 7b | Offline license, grace read-only | OK | Implemented + tested. |
-
-## §9 / Definition of Done
-
-| # | Finding | Class | Evidence / notes |
-|---|---|---|---|
-| 9.1 | **~600-test §9 target** | [BLOCKED] | Current suite is 219 (213 pass + 6 skip). The original's per-suite targets are not on disk; cannot map to them until the original arrives. |
-| 9.2 | MSI clean-box install DoD item | OPEN | Blocked on WiX (§6a). |
-| 9.3 | Ollama package self-test | OPEN | Blocked on the DGX Spark IP. |
+**Closure order (per owner directive, G-impact first):** G3 → G5 → G1(CLI verbs)
+→ G2(conformance behaviors, live parts after Ollama) → G6/G7 remainder.
 
 ---
 
-## Prioritized closure plan (for the gated coverage pass once the original lands)
+## B. §9 coverage map (current vs ~845 target)
 
-**P0 — functional gaps that change what the product does**
-- 4.1 loader-at-session-start + 4.2 `package install/list/remove` (the actual
-  install→run flow a customer uses).
-- 1.2 real cancel/kill of an in-flight job's process tree.
-- 1.3 live team execution (subagent spawn during a run).
-- 7.1 the missing `scr` CLI verbs (run, sessions, approve/deny, backup/restore).
+| Suite (original §9) | Target≈ | Current | Under by | Closure note |
+|---|---|---|---|---|
+| Kernel unit | 180 | ~29 (`test_kernel`,`test_recovery`,`test_atomic`,`test_approval`) | ~151 | Real gaps: parallel-safe tool exec, summarization-on-overflow, cost-ceiling, deterministic-replay — behaviors NOT yet implemented, so tests can't exist until built. Track as feature gaps, not padding. |
+| Adapter conformance | 300 (60×5) | ~28 (`test_gateway`,`test_adapters_cloud`,`test_conformance`) | ~272 | Contract corpus done; behavioral corpus (tool-call fidelity, parallel, streaming interruption, long-context, JSON-mode) partly needs a live model → **blocked on Ollama** for the live rows; offline rows expandable now. |
+| Capability adversarial | 120 | ~37 (`test_capability`,`test_tools_native`,`test_policy`) | ~83 | Expandable now with real escapes (more ADS/reparse/UNC/8.3-shortname/arg-injection/net-bypass/attenuation-violation vectors). |
+| Crash/chaos | 70 | ~11 (`test_chaos_kill`,`test_recovery`,`test_hardening`) | ~59 | Expandable: kill at EVERY journal state (not just one), fsync-fault at each artifact, disk-full at each writer, clock-jump variants. |
+| Ledger adversarial | 40 | ~17 (`test_ledger`,`test_evidence`) | ~23 | Expandable: more splice/reorder/truncation/seal-forgery permutations. |
+| Package security | 35 | ~26 (`test_loader`,`test_signing`,`test_merkle`,`test_package`) | ~9 | Near target; a few more downgrade/dep/semver/min-runtime cases close it. |
+| Concurrency | 45 | ~5 (`test_locks`,`test_hardening` storm) | ~40 | Expandable: stale-lock (PID+boot-id+heartbeat) detection, parallel tool-exec races, cancel storm. Stale-lock detection is also a FEATURE gap (see §3.5). |
+| E2E scenarios | 30 | ~15 (`test_service`,`test_sessions`,`test_content_migration`) | ~15 | Needs the §5 install→…→verify flow (CLI verbs + MSI); partly blocked. |
+| Upgrade/rollback | 25 | ~10 (`test_updater`,`test_backup`) | ~15 | Expandable: version matrix, failed-migration auto-restore (migrations are a FEATURE gap). |
+| **Total** | **~845** | **~230** | **~615** | Mix of real-test expansion (unblocked) + feature-build-then-test + Ollama/MSI-blocked rows. |
 
-**P1 — observability/ops completeness**
-- 8.1 full `scr doctor` checks · 8.2 `/metrics` route · 5.1 log rotation ·
-  2.2 admin-override layer · 3.2 policy directory loader.
+**Honest headline:** ~230/845. The shortfall is NOT padding-sized — it is (a)
+real adversarial vectors not yet enumerated, (b) design features not yet built
+(parallel exec, summarization, migrations, stale-lock, classification
+ceilings), and (c) live-model/installer rows blocked on Ollama/WiX. Each row
+above says which.
 
-**P2 — hardening/edge**
-- 6.1/6.2 HTTP MCP restart + health loop · 7a seat accounting · 2.3 `model test`.
+---
 
-**Down-payment closed in THIS pass (unblocked, pure test proving an existing
-claim):** 2.1 shared adapter conformance corpus.
+## C. New divergences the original surfaces (not in the reconstruction)
 
-The remaining items are deliberately NOT half-built here: several are feature
-work that belongs in its own phase-gated commit with its own adversarial tests,
-and the coverage-target mapping (step 2) needs the original's suite table.
+| # | Original requirement | Class | Where |
+|---|---|---|---|
+| C1 | Kernel executes tool calls **in parallel where declared safe** | [MISSING] | §3.1 "EXEC (parallel where declared safe)"; kernel is sequential |
+| C2 | **Summarization-on-overflow** context management | [MISSING] | §3.1; kernel only STOPS on token-estimate, no summarize |
+| C3 | Deterministic **replay mode** | [MISSING] | §3.1 "deterministic replay mode" |
+| C4 | Package **re-verified at each execution** (not only install) | [MISSING] **G3** | §3.4/§1-G3 |
+| C5 | **Real process-tree kill on cancel** | [PARTIAL] **G5** | §3.6; cancel is a status-flip |
+| C6 | Manifest **semver + deps + min-runtime + model requirements**; **hot reload** | [MISSING] | §3.4 |
+| C7 | **Classification ceilings** in capability kernel | [MISSING] | §3.3 |
+| C8 | **Parent revocation invalidates the delegation chain** at runtime | [MISSING] | §3.3 (SEVER-aligned) |
+| C9 | **Stale-lock detection** (PID + boot-id + heartbeat) | [DIVERGENT] | §3.5; impl relies on OS-release-on-death only |
+| C10 | Backup key **wrapped by DPAPI/keyring** (not raw 32-byte in) | [PARTIAL] | §3.5 |
+| C11 | Windows **restricted token**; Linux **no-new-privs + seccomp** | [MISSING] | §3.6 |
+| C12 | **Schema migrations** forward-only + pre-migration snapshot + auto-restore | [MISSING] | §6 |
+| C13 | Package update **shadow-install → self-test → promote** | [MISSING] | §6 |
+| C14 | **Seat enforcement** in team mode | [MISSING] | §7 |
+| C15 | **SBOM per release + reproducible build + signed artifacts** | [MISSING] | §8, DoD |
+| C16 | Named-pipe transport + **named-pipe SD** on Windows | [MISSING] | §3.7, §8 |
+| C17 | `scr doctor`: reachability, signatures, disk, **clock skew** | [PARTIAL] | §3.8; impl checks integrity+models only |
+| C18 | Metrics **/metrics** endpoint (off by default) | [MISSING] | §3.8 |
+| C19 | Missing CLI verbs: `run`, `package install/list`, `session list/resume/export`, `model test`, `backup/restore` | [MISSING] **G1** | §3.7 |
+| C20 | Log **rotation** (size-capped, rotating) | [MISSING] | §3.8 |
+
+Carried from the prior audit and still valid: loader-at-session-start (=C4),
+fake cancel (=C5), missing CLI verbs (=C19), admin-override config layer,
+`/metrics`, log rotation, HTTP-MCP restart/health loop.
+
+---
+
+## D. What is fully done and matches the original (no gap)
+
+Kernel journaled loop + idempotency-classified recovery (G5 recovery half);
+capability manifest deny-by-default + resolved-path containment (traversal/ADS/
+symlink/reparse) + monotonic attenuation; Ed25519+Merkle signing, pinning,
+signed revocation, tamper-localized fail-closed loader; hash-chained ledger +
+HMAC seals + offline evidence bundle (G4, G8 core); SQLite WAL + atomic writes
++ cross-process lock; sandboxed workers (Job Objects/rlimit+setsid) + env
+isolation + tree-kill-on-timeout; 5 adapters + contract conformance; FastAPI
+service + RBAC + durable idempotent queue; DPAPI vault; offline Ed25519 license
+with grace read-only; staged updater with rollback; JSON logs + redaction +
+off-by-default metrics registry; encrypted backup/restore.
+
+---
+
+## E. Execution plan (this reconciliation pass onward, gated)
+
+1. **G3 — verify-at-execution.** Package registry: install a verified package
+   into the SCR home, and re-verify (signature + per-file tamper) at session
+   start before any run. Refuse to run a tampered/unsigned/revoked installed
+   package. Adversarial tests: install-then-tamper-on-disk → run refused;
+   revoke → run refused.
+2. **G5 — real cancel.** Track live sandbox process trees per job; cancel kills
+   the tree and cooperatively stops the kernel between tool calls; in-flight
+   non-idempotent tool → quarantined on recovery. Test: background run with a
+   long grandchild → cancel → no orphan survives, job cancelled.
+3. **G1 — CLI verbs.** `package install/list`, `run`, `session list/resume/
+   export`, `model test`, `backup/restore`, `approve/deny`. Tests via `main()`.
+4. **Coverage expansion** of the unblocked §9 rows (capability, crash, ledger,
+   package, concurrency) with real vectors; justifications recorded for rows
+   that are feature-blocked or live-model/installer-blocked.
+5. Remaining features (C1–C3, C6–C18, C20) sequenced by goal impact in
+   subsequent gated commits; each lands with its adversarial suite.
