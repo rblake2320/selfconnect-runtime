@@ -90,6 +90,15 @@ CREATE TABLE IF NOT EXISTS seat_holders(
   subject TEXT PRIMARY KEY,
   acquired_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS team_sessions(
+  team_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  parent_session TEXT,
+  depth INTEGER NOT NULL,
+  created_at REAL NOT NULL,
+  UNIQUE(session_id)
+);
 """
 
 
@@ -285,3 +294,23 @@ class Store:
         row = self.conn.execute(
             "SELECT subject, role FROM agent_tokens WHERE token=?", (token,)).fetchone()
         return dict(row) if row else None
+
+    # -- team sessions (delegation tree) --------------------------------
+    def team_session_add(self, team_id: str, session_id: str, agent: str,
+                         parent_session: Optional[str], depth: int) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO team_sessions(team_id, session_id, agent,"
+            " parent_session, depth, created_at) VALUES(?,?,?,?,?,?)",
+            (team_id, session_id, agent, parent_session, depth, time.time()))
+
+    def team_members(self, team_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT session_id, agent, parent_session, depth FROM team_sessions"
+            " WHERE team_id=? ORDER BY created_at", (team_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def team_id_for_session(self, session_id: str) -> Optional[str]:
+        row = self.conn.execute(
+            "SELECT team_id FROM team_sessions WHERE session_id=?",
+            (session_id,)).fetchone()
+        return row["team_id"] if row else None

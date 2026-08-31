@@ -163,11 +163,69 @@ def _session_manager(cfg, args):
     return SessionManager(store, factory), store
 
 
+def _adapter_from_config(cfg, args):
+    from .model_factory import build_adapter
+    from .vault import Vault
+    name = getattr(args, "model", None) or cfg.get("default_model")
+    if not name or name not in cfg.models():
+        raise SystemExit(f"no configured model {name!r}; run `scr model add` first")
+    mc = cfg.models()[name]
+    secret = Vault(cfg.home).get_secret(mc["secret_ref"]) if mc.get("secret_ref") else None
+    return build_adapter(mc, secret)
+
+
+def _run_team(cfg, args, target: str, task: str) -> int:
+    """Team/agent run: load the topology from the installed package that
+    provides `target` and execute it through the runtime."""
+    from .capability import CapabilityManifest
+    from .registry import PackageRegistry
+    from .sandbox import SandboxRunner
+    from .signing import Keystore
+    from .state import Store
+    from .team import TeamLoadError, TeamRunner, load_team_from_package
+    from .tools_native import build_native_tools
+
+    reg = PackageRegistry(cfg.home, Keystore())
+    adapter = _adapter_from_config(cfg, args)
+    store = Store(_store_path(cfg.home))
+    runner_sb = SandboxRunner()
+
+    loaded = None
+    available: dict[str, list[str]] = {}
+    for pkg in reg.list_installed():
+        try:
+            lt = load_team_from_package(pkg.path, cfg.home)
+        except TeamLoadError:
+            continue
+        available[pkg.name] = sorted(lt.specs) + [f"team:{a}" for a in lt.aliases]
+        if target in lt.specs or target in lt.aliases:
+            loaded = lt
+            break
+    if loaded is None:
+        listing = "; ".join(f"{p}: {v}" for p, v in available.items()) or "(none installed)"
+        raise SystemExit(f"unknown team/agent {target!r}. Available — {listing}")
+
+    trunner = TeamRunner(store, loaded, lambda a: adapter,
+                         lambda m: build_native_tools(m, runner_sb))
+    result = trunner.run(target, task)
+    print(f"team {target} [{result.stopped_reason}] session {result.session_id} "
+          f"(team {trunner.last_team_id})")
+    if result.final_text:
+        print(result.final_text)
+    return 0 if result.stopped_reason in ("completed", "awaiting_approval") else 1
+
+
 def cmd_run(args) -> int:
     cfg = Config(args.home)
+    parts = args.target_and_task
+    if len(parts) >= 2:
+        # `scr run <team-or-agent> "<task>"` (design §3.7)
+        return _run_team(cfg, args, parts[0], " ".join(parts[1:]))
+    # bare `scr run "<task>"` → single-agent default
+    task = parts[0]
     mgr, store = _session_manager(cfg, args)
     import uuid
-    job = mgr.enqueue(args.task, idem_key=args.idem or uuid.uuid4().hex)
+    job = mgr.enqueue(task, idem_key=args.idem or uuid.uuid4().hex)
     result = mgr.run_job(job.job_id)
     print(f"job {job.job_id} [{result.stopped_reason}] session {job.session_id}")
     if result.final_text:
@@ -360,7 +418,9 @@ def build_parser() -> argparse.ArgumentParser:
     pksub.add_parser("list").set_defaults(func=cmd_package_list)
 
     rn = sub.add_parser("run")
-    rn.add_argument("task"); rn.add_argument("--model", default=None)
+    rn.add_argument("target_and_task", nargs="+",
+                    help='either "<task>" (single agent) or <team-or-agent> "<task>"')
+    rn.add_argument("--model", default=None)
     rn.add_argument("--idem", default=None)
     rn.set_defaults(func=cmd_run)
 
