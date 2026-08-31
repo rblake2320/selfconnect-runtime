@@ -49,3 +49,18 @@ present in `capability._roots_contained` / `attenuate`; wiring them through
 the policy layer is deferred to Phase 9 hardening to keep the Phase 3 surface
 small. Recorded as an explicit deferral, not a silent gap. New dependency
 `PyYAML==6.0.2` (safe_load only) because policy files are YAML per the design.
+
+## ADR-005 — Ed25519 via `cryptography`; loader fail-closed (2026-08-31)
+
+Design §3.4 mandates Ed25519 detached signatures over the package Merkle
+root. We use `cryptography==50.0.1` (constant-time verify) rather than any
+hand-rolled implementation. Trust is by key pinning in a deny-by-default
+`Keystore`; a revocation list is honored only when its own signature verifies
+against a trusted key, so a forged revocation list cannot deny-of-service a
+good package. The loader is fail-closed throughout: a malformed zip,
+unparseable manifest, missing signature, hash mismatch, root mismatch, bad
+signature, untrusted key, or valid revocation each returns a rejection with a
+localized reason — there is no code path where an error yields a pass. The
+`scr/signer.py` module is the only place private-key signing lives and is
+never imported by the loader or (future) service, keeping the publisher
+capability out of the customer installer.

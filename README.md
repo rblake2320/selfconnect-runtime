@@ -70,8 +70,25 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 | `test_policy.py` | 6 | Approval matching by tool and by arg-regex; tightening intersects; **widening is rejected**, not silently granted |
 | `test_approval.py` | 7 | Pause without executing; approve→resume runs exactly once; deny→tool never runs; wrong/forged approval_id does not authorize; crash mid-wait recovers to the same gate; approval/denial ledgered with approver; token budget governor stops on real counts |
 
+## Phase 4 — Package format, signing, loader (+26 tests, 133 cumulative)
+
+| Module | Responsibility |
+|---|---|
+| `scr/merkle.py` | Domain-separated SHA-256 Merkle root over `{path: filehash}` |
+| `scr/signing.py` | Ed25519 sign/verify; deny-by-default `Keystore` (publisher pin + customer keys); signed `RevocationList` honored only if itself signed by a trusted key |
+| `scr/package.py` | `.scpkg` build/read; in-memory member reads (path-traversal-safe) |
+| `scr/signer.py` | Publisher signer (`python -m scr.signer`) — never shipped to customers |
+| `scr/loader.py` | Fail-closed `verify_package` (hash→manifest→root→signature→pinning→revocation, each localized) + `tests/*.yaml` self-test runner |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_merkle.py` | 5 | Root is order-independent and changes on any leaf/file change |
+| `test_signing.py` | 8 | Sign/verify; wrong key + tampered message fail; keystore deny-by-default; revocation list must be trusted-signed; forged revocation rejected |
+| `test_package.py` | 3 | Build/read round-trip; manifest covers every payload file; excludes itself |
+| `test_loader.py` | 10 | Valid load; **unsigned / untrusted-key / single-leaf-tamper (localized) / manifest mismatch / revoked-version** all rejected; rogue revocation can't brick a good package; self-tests pass/fail and refuse unverified packages |
+
 ## What is NOT yet included
 
-`.scpkg` signing/loading, FastAPI surface, installers, licensing —
-Phases 4–8 per the design doc. No gap between claims and code: everything
+FastAPI service surface, session-start loader wiring, installers, licensing —
+Phases 5–8 per the design doc. No gap between claims and code: everything
 listed above is implemented and tested; everything not listed is not claimed.

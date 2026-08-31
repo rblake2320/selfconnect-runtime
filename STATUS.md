@@ -8,7 +8,7 @@ Last updated: 2026-08-31.
 | 1 | Kernel, recovery, capability core, ledger, gateway, atomic, locks | ✅ complete | 69 (66 pass + 3 POSIX-skip on Windows) |
 | 2 | Sandboxed tool execution + MCP client host | ✅ complete | +25 (94 cumulative; 89 pass + 5 platform-skip on Windows) |
 | 3 | Capability kernel completion | ✅ complete | +13 (107 cumulative; 102 pass + 5 platform-skip on Windows) |
-| 4 | Package format, signing, loader | not started | — |
+| 4 | Package format, signing, loader | ✅ complete | +26 (133 cumulative; 128 pass + 5 platform-skip on Windows) |
 | 5 | Ledger completion + evidence export | not started | — |
 | 6 | Service, API, sessions, orchestration | not started | — |
 | 7 | Vault, config, CLI, installers, updater, licensing | not started | — |
@@ -70,10 +70,32 @@ Last updated: 2026-08-31.
   net_hosts — enough to prove intersection-only + widening rejection);
   full root/exec tightening in Phase 9 hardening.
 
+## Phase 4 — implemented / tested / deferred
+
+- Implemented + tested: `scr/merkle.py` domain-separated SHA-256 Merkle root;
+  `scr/signing.py` Ed25519 sign/verify, `key_id`, deny-by-default `Keystore`
+  (publisher pin + customer keys), signed `RevocationList` honored only when
+  itself signed by a trusted key; `scr/package.py` `.scpkg` build/read
+  (path-traversal-safe in-memory member reads); `scr/signer.py` publisher
+  signer entry (`python -m scr.signer`, never shipped to customers);
+  `scr/loader.py` fail-closed `verify_package` (hash→manifest→root→signature→
+  pinning→revocation, each failure localized) and a `run_selftests` runner
+  executing `tests/*.yaml` through the kernel against the configured model.
+- Tested adversarially: valid load; unsigned rejected; untrusted/wrong key
+  rejected; single-leaf byte tamper rejected AND localized to the file;
+  manifest/content mismatch (extra/missing/wrong-hash) rejected; downgrade to
+  a revoked version rejected; a revocation list from an untrusted key does NOT
+  brick a good package (fail closed on trust); self-tests pass/fail correctly
+  and refuse to run on an unverified package.
+- Deferred: loader wiring at session start (Phase 6 service); full CLI verbs
+  `scr package install|verify` (Phase 7 — functions exist now).
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
 - `pyyaml==6.0.2` — policy files are YAML per design §3.3; safe_load only.
+- `cryptography==50.0.1` — Ed25519 package signing per design §3.4;
+  constant-time verify, no hand-rolled crypto.
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,
   ctypes Job Objects, resource, threading, queue, urllib, json).
 

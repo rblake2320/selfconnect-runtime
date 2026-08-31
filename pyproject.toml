@@ -5,6 +5,7 @@ description = "SelfConnect Runtime (SCR) — self-hosted journaled agent runtime
 requires-python = ">=3.12"
 dependencies = [
     "pyyaml==6.0.2",
+    "cryptography==50.0.1",
 ]
 
 [project.optional-dependencies]
