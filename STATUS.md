@@ -15,6 +15,27 @@ Last updated: 2026-08-31.
 | 8 | Remaining adapters + ops surface | ✅ complete | +21 (209 cumulative; 203 pass + 6 platform-skip on Windows) |
 | 9 | Hardening + full matrix | ✅ complete | +6 (215 cumulative; 209 pass + 6 platform-skip on Windows) |
 
+## Design reconciliation & coverage closure (2026-08-31, post-Phase-9)
+
+- **Original design doc NOT yet on disk.** `docs/SELFCONNECT_RUNTIME_DESIGN.md`
+  is still the ADR-001 reconstruction (SHA-256 `58b017bf…`, identical to commit
+  e521cab); no original found anywhere searched. The owner's referenced
+  `~600-test` §9 target and suite table live only in the original. The
+  reconstruction-vs-original diff (step 1) and the per-suite coverage mapping
+  (step 2) are BLOCKED on the original arriving.
+- **What was produced unblocked:** `docs/DESIGN_GAP_ANALYSIS.md` — a rigorous
+  §-by-§ audit of the code against the design-on-disk + DoD, enumerating every
+  UNIMPLEMENTED / UNDER-TESTED / DIVERGENT item with a prioritized closure plan.
+- **Coverage down-payment closed:** §3.2 "all adapters pass one shared
+  conformance corpus" was previously unproven → `tests/test_conformance.py`
+  (+11) now asserts the same build/parse contract across all five real adapters.
+  Suite now **230 tests (224 pass + 6 skip)**.
+- **Blocked on owner inputs:** (a) the true original design doc, to complete the
+  step-1 diff and the step-2 per-suite ~600 mapping; (b) the DGX Spark IP, for
+  the live Ollama package self-test; (c) a usable WiX/dotnet toolchain (`wix`
+  not found, `dotnet --version` errors here), for the MSI build + clean-box E2E.
+  These stay OPEN until supplied; no fabricated closure.
+
 ## Content migration (SelfConnect → `.scpkg`)
 
 - Done + tested: `packages/selfconnect-enterprise/` ported to `.scpkg` source
