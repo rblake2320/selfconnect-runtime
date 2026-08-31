@@ -45,6 +45,9 @@ class ToolSpec:
     idempotent: bool
     description: str = ""
     parameters: dict[str, Any] = field(default_factory=lambda: {"type": "object", "properties": {}})
+    # §3.1: only tools DECLARED parallel-safe may run concurrently, and only
+    # when also idempotent (so a crash mid-batch is always safe to reissue).
+    parallel_safe: bool = False
 
 
 # ------------------------------------------------------------------ config
@@ -215,16 +218,84 @@ class Kernel:
 
         return self._stop(session_id, self.guards.max_iterations, "max_iterations")
 
+    def _batch_eligible(self, call: ToolCall) -> bool:
+        """A call may join a concurrent batch only if its tool is declared
+        parallel-safe AND idempotent, it is granted, and it is not
+        approval-gated. Everything else runs sequentially."""
+        spec = self.tools.get(call.name)
+        if spec is None or not (spec.parallel_safe and spec.idempotent):
+            return False
+        if self.policy is not None and self.policy.requires_approval(call):
+            return False
+        try:
+            self.manifest.check_tool(call.name)
+        except CapabilityDenied:
+            return False
+        return True
+
+    def _persist_precomputed(self, session_id: str, call: ToolCall,
+                             precomputed: str) -> str:
+        """Journal + fold a result computed OUTSIDE the store (used by the
+        parallel batch, where fns ran concurrently but all store writes stay on
+        the main thread — the single serialization point, so no races)."""
+        tail = self.store.journal_tail(session_id)
+        seq = self.store.journal_append(
+            session_id, "EXEC_INTENT",
+            {"tool": call.name, "args": call.arguments, "idempotent": True,
+             "idem_key": _idem_key(session_id, (tail["seq"] if tail else 0) + 1,
+                                    call.name, call.arguments)},
+        )
+        idem_key = self.store.journal_all(session_id)[-1]["payload"]["idem_key"]
+        cached = self.store.tool_result_get(idem_key)
+        if cached is not None:
+            result = cached
+        else:
+            result = precomputed
+            self.store.tool_result_put(idem_key, session_id, call.name, result)
+        self.store.journal_append(session_id, "EXEC_DONE",
+                                  {"intent_seq": seq, "idem_key": idem_key})
+        self.ledger.append(session_id, {
+            "type": "tool_exec", "tool": call.name,
+            "args_sha256": hashlib.sha256(
+                json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
+            "result_sha256": hashlib.sha256(result.encode()).hexdigest(),
+            "idem_key": idem_key, "parallel": True,
+        })
+        return result
+
+    def _run_parallel_batch(self, session_id: str, batch: list[ToolCall]) -> None:
+        """Run the batch's tool fns concurrently (they are idempotent reads with
+        no shared mutable state), then journal/fold each on the main thread in
+        original order."""
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(batch), 8)) as ex:
+            results = list(ex.map(lambda c: self.tools[c.name].fn(c.arguments), batch))
+        for call, res in zip(batch, results):
+            text = self._persist_precomputed(session_id, call, res)
+            self._add_tool_msg(session_id, call, text)
+
     def _execute_pending(self, session_id: str, calls: list[ToolCall]) -> Optional[str]:
-        """Execute a list of tool calls, honoring HITL approval gates. Returns
-        None when all executed; returns an approval_id (and journals
-        AWAITING_APPROVAL with the remaining calls) when it pauses."""
-        for i, call in enumerate(calls):
+        """Execute a list of tool calls, honoring HITL approval gates and
+        running consecutive parallel-safe calls concurrently. Returns None when
+        all executed; returns an approval_id (and journals AWAITING_APPROVAL
+        with the remaining calls) when it pauses."""
+        i = 0
+        while i < len(calls):
+            call = calls[i]
             if self.cancel_check is not None and self.cancel_check():
-                # Stop folding further calls; the loop's next guard finalizes.
                 self.store.journal_append(session_id, "CANCELLED",
                                           {"at_call": call.name})
                 return None
+            # Greedily collect a run of consecutive batch-eligible calls.
+            if self._batch_eligible(call):
+                j = i
+                while j < len(calls) and self._batch_eligible(calls[j]):
+                    j += 1
+                if j - i >= 2:
+                    self._run_parallel_batch(session_id, calls[i:j])
+                    i = j
+                    continue
+            # Fall through: single call, sequential path (approval + exec).
             if self.policy is not None and self.policy.requires_approval(call):
                 aid = _approval_id(session_id, call)
                 rec = self.store.approval_get(aid)
@@ -253,6 +324,7 @@ class Kernel:
                     self._add_tool_msg(
                         session_id, call,
                         f"DENIED by approver {rec['approver']}: action not authorized")
+                    i += 1
                     continue
                 # approved → record and fall through to execute
                 self.ledger.append(session_id, {
@@ -261,6 +333,7 @@ class Kernel:
                 })
             result_text = self._execute_call(session_id, call)
             self._add_tool_msg(session_id, call, result_text)
+            i += 1
         return None
 
     def _add_tool_msg(self, session_id: str, call: ToolCall, result_text: str) -> None:

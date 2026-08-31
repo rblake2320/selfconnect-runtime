@@ -94,8 +94,11 @@ def build_native_tools(manifest: CapabilityManifest,
     def _obj(props: dict[str, Any], required: list[str]) -> dict[str, Any]:
         return {"type": "object", "properties": props, "required": required}
 
+    # Read-only, idempotent tools are declared parallel_safe: they have no
+    # shared mutable state, so a batch of them runs concurrently (§3.1).
+    # Side-effecting tools (fs_write, proc_exec) are never parallel_safe.
     return {
-        "fs_read": ToolSpec("fs_read", fs_read, idempotent=True,
+        "fs_read": ToolSpec("fs_read", fs_read, idempotent=True, parallel_safe=True,
                             description="Read a file inside the workspace.",
                             parameters=_obj({"path": {"type": "string"}}, ["path"])),
         "fs_write": ToolSpec("fs_write", fs_write, idempotent=False,
@@ -103,10 +106,10 @@ def build_native_tools(manifest: CapabilityManifest,
                              parameters=_obj({"path": {"type": "string"},
                                               "content": {"type": "string"}},
                                              ["path", "content"])),
-        "fs_list": ToolSpec("fs_list", fs_list, idempotent=True,
+        "fs_list": ToolSpec("fs_list", fs_list, idempotent=True, parallel_safe=True,
                             description="List a directory inside the workspace.",
                             parameters=_obj({"path": {"type": "string"}}, ["path"])),
-        "http_get": ToolSpec("http_get", http_get, idempotent=True,
+        "http_get": ToolSpec("http_get", http_get, idempotent=True, parallel_safe=True,
                              description="HTTP GET an allowlisted host.",
                              parameters=_obj({"url": {"type": "string"}}, ["url"])),
         "proc_exec": ToolSpec("proc_exec", proc_exec, idempotent=False,

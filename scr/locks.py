@@ -38,7 +38,11 @@ def boot_id() -> str:
             return "posix-unknown"
     import ctypes
     # GetTickCount64 = ms since boot; now - uptime = boot epoch (constant).
-    tick_ms = ctypes.windll.kernel32.GetTickCount64()
+    # NB: restype MUST be c_uint64 — ctypes defaults to c_int (32-bit), which
+    # truncates the 64-bit tick count (wrong past ~49 days uptime).
+    fn = ctypes.windll.kernel32.GetTickCount64
+    fn.restype = ctypes.c_uint64
+    tick_ms = fn()
     return f"win-{int(time.time()) - int(tick_ms // 1000)}"
 
 

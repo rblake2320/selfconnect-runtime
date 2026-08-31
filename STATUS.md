@@ -91,6 +91,24 @@ currently-unproven claim.
   **previous-boot leftover is reclaimable so a restart isn't blocked**,
   break_stale refuses a live lock / clears a dead one. Existing OS-lock
   contention + death-release tests unchanged. Closes C9 (G5).
+  - **Correction (researched, not assumed):** the Windows `boot_id` derived
+    `GetTickCount64` via ctypes with the default `restype` (c_int), which
+    truncates the 64-bit tick past ~49 days uptime. Confirmed against the
+    ctypes docs and fixed to `restype = c_uint64`; verified empirically on-box.
+- **P0.3 — Parallel-safe tool execution (§3.1).** `ToolSpec.parallel_safe`
+  (default False); a run of consecutive parallel-safe + idempotent + granted +
+  non-approval-gated calls executes its tool fns concurrently
+  (ThreadPoolExecutor), while ALL store writes (journal/ledger/idempotency)
+  stay on the main thread — the single serialization point, so no races. The
+  fns run before the tight sequential journal, preserving the
+  single-dangling-intent recovery model. Native fs_read/fs_list/http_get are
+  parallel_safe; fs_write/proc_exec are not. `tests/test_parallel_exec.py`
+  (+4), **real work, no fakes**: 4 concurrent `http_get` through real sandbox
+  worker subprocesses against a real ThreadingHTTPServer finish well under the
+  sequential floor (proves real parallelism); 6 concurrent real-file reads
+  leave the hash-chained ledger intact with matched EXEC_INTENT/EXEC_DONE
+  pairs (no store corruption); a non-parallel-safe write breaks the batch and
+  runs sequentially; a lone parallel-safe call is not batched. Closes C1 (G5).
 
 ## Content migration (SelfConnect → `.scpkg`)
 
