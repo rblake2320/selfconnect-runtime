@@ -111,3 +111,16 @@ marked OPEN in STATUS — the WiX toolset is not present in this environment and
 claiming a working MSI without building and running it on a clean box would
 violate rule 3 (no claim/code divergence). The tested Phase 7 core adds no new
 runtime dependency; `keyring` is an optional POSIX-only extra.
+
+## ADR-009 — SigV4 implemented directly, not via boto3; metrics off by default (2026-08-31)
+
+The Bedrock adapter implements AWS SigV4 signing with stdlib hmac/hashlib
+rather than pulling in `boto3`/`botocore` (a large transitive dependency
+tree). Correctness is anchored to AWS's published SigV4 example vector: the
+`derive_signing_key` output is asserted byte-for-byte against the documented
+value, so the signing core is proven without a live AWS call. Backup
+encryption reuses the already-present `cryptography` (AES-256-GCM), so Phase 8
+adds zero dependencies. Prometheus metrics are off by default per design §3.8;
+the registry is inert until explicitly enabled, so nothing is exposed on a
+default install. The NIST 800-171 mapping is an internal indicative draft, not
+an assessment, and lists its gaps rather than overclaiming coverage.

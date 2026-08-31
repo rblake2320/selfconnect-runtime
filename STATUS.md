@@ -12,7 +12,7 @@ Last updated: 2026-08-31.
 | 5 | Ledger completion + evidence export | ✅ complete | +6 (139 cumulative; 134 pass + 5 platform-skip on Windows) |
 | 6 | Service, API, sessions, orchestration | ✅ complete | +22 (161 cumulative; 155 pass + 6 platform-skip on Windows) |
 | 7 | Vault, config, CLI, updater, licensing (installers scaffolded) | ⚠ core complete; installer BUILD open | +27 (188 cumulative; 182 pass + 6 platform-skip on Windows) |
-| 8 | Remaining adapters + ops surface | not started | — |
+| 8 | Remaining adapters + ops surface | ✅ complete | +21 (209 cumulative; 203 pass + 6 platform-skip on Windows) |
 | 9 | Hardening + full matrix | not started | — |
 
 ## Phase 1 — implemented / tested / deferred
@@ -157,6 +157,26 @@ Last updated: 2026-08-31.
   first-run `scr model add` LIVE smoke test against a real endpoint (needs a
   configured model); `scr run/service` verbs.
 
+## Phase 8 — implemented / tested / deferred
+
+- Implemented + tested: `scr/adapters_cloud.py` `BedrockAdapter` (AWS SigV4,
+  signing-key derivation checked against AWS's published vector) and
+  `AzureOpenAIAdapter`, both on the gateway contract; `scr/resilience.py`
+  circuit breaker (closed→open→half-open→closed, injectable clock) +
+  `FallbackChain`; `scr/backup.py` AES-256-GCM encrypted snapshot with atomic
+  restore; `scr/observability.py` JSON logging with a correlation-id contextvar
+  and an off-by-default Prometheus metrics registry. Internal docs:
+  ADMIN_GUIDE, SECURITY_OVERVIEW, NIST_800-171_mapping (draft).
+- Tested adversarially: SigV4 vector match; deterministic signed Bedrock
+  request; breaker opens/half-opens/closes and the chain skips open breakers,
+  raises when all down, and reuses a recovered primary after cooldown;
+  backup→restore round-trip; wrong key + single-byte tamper fail (GCM tag);
+  restore is atomic (no partial home on failure); metrics inert when disabled;
+  JSON logs carry the correlation id and redact secrets.
+- Deferred: live network conformance for the cloud adapters (Phase 9 CI with
+  real endpoints); `scr backup`/`doctor` CLI verbs wired to the service
+  (functions exist; doctor CLI present).
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
@@ -169,6 +189,8 @@ Last updated: 2026-08-31.
 - `websockets==14.1` — WebSocket transport for run-event streaming.
 - Phase 7 tested core added **zero** dependencies (DPAPI via ctypes; license
   via existing `cryptography`). `keyring` is an OPTIONAL POSIX-only extra.
+- Phase 8 added **zero** dependencies (SigV4 via stdlib hmac/hashlib — no
+  boto3; AES-GCM via existing `cryptography`).
 - Phase 5 added **zero** dependencies (evidence path is stdlib-only by design,
   so bundles verify with nothing installed).
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,
