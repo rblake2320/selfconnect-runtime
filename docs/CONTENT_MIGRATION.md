@@ -25,12 +25,26 @@ loader verifies it and runs the `tests/*.yaml` self-tests.
 signed `.scpkg` loads (tamper-localized), and its self-tests pass against a
 stand-in customer model.
 
-## Self-test against Ollama — PENDING (honest status)
+## Self-test against Ollama — CLOSED (live, 2026-08-31)
 
 The design's "package self-tests must pass against Ollama before the migration
-is called done" is **NOT yet satisfied**: Ollama was not reachable at
-`localhost:11434` during this pass, so the self-tests ran against a scripted
-stand-in adapter (proving the runner + package wiring), not a live local model.
-To close this: start Ollama, then
-`scr package verify packages/selfconnect-enterprise-<v>.scpkg` with a configured
-Ollama model. Until then this item is OPEN in STATUS.
+is called done" is **satisfied with live evidence**. Ran against the DGX Spark
+Ollama at `http://192.168.12.220:11434`, model **gemma3:latest** (Ollama 0.24.0,
+GB10):
+
+```
+verified: True  ok: True
+  [PASS] identity-check
+  [PASS] smoke-greeting
+```
+
+Both scenarios passed against the real model (identity-check works because the
+kernel's `You are a SelfConnect agent` system prompt reaches the live model).
+The full §5 install-story E2E (`tests/test_e2e_install_story.py`) also passed
+live end-to-end (19.6s): init → model add → live model test → package install →
+live run → sealed evidence export → offline verify → VERIFIED.
+
+Infra note: the Spark's unified memory (121 GiB) was initially exhausted by two
+Perplexity local vLLM servers (~116 GiB used); a peer paused them to free ~96
+GiB so Ollama could load. Those vLLM servers may auto-restart with the
+Perplexity app — re-running the live test needs the headroom re-freed.

@@ -91,6 +91,24 @@ def verify_package(path: str, keystore: Keystore,
         pkg.close()
 
 
+def integrity_check(path: str) -> LoadResult:
+    """Verify a package's on-disk integrity WITHOUT asserting trust: checks
+    file hashes → manifest, Merkle root, and the signature against the
+    package's OWN embedded key. Detects tamper of a stored package (for
+    `scr doctor`); it does not prove the key is pinned."""
+    from .signing import Keystore
+    try:
+        pkg = Package(path)
+        pub = (pkg.signature or {}).get("public_key", "")
+        pkg.close()
+    except Exception as e:  # noqa: BLE001
+        return LoadResult(False, "malformed_package", str(e)[:200])
+    ks = Keystore()
+    if pub:
+        ks.add(pub)
+    return verify_package(path, ks)
+
+
 def run_selftests(path: str, adapter, keystore: Keystore,
                   revocations: Optional[RevocationList] = None) -> dict:
     """Verify the package, then run its tests/*.yaml scenarios through the

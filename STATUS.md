@@ -47,9 +47,14 @@ Last updated: 2026-08-31.
   - **MSI build + clean-box step 1** — WiX/dotnet not usable here (`wix`
     absent, `dotnet --version` errors). Steps 2–6 automated; step 1 manual
     procedure documented. Also needs a thin `scr-service.exe` entry.
-  - **Live Ollama self-test** — DGX Spark unreachable from here (both known
-    Spark IPs returned nothing on :11434; Ollama still localhost-bound). Ready
-    to run the moment `SCR_OLLAMA_URL` is provided.
+  - **Live Ollama self-test — ✅ CLOSED (2026-08-31).** Ran the §5 install-story
+    E2E AND the selfconnect-enterprise package self-tests LIVE against the DGX
+    Spark Ollama (`http://192.168.12.220:11434`, model **gemma3:latest**, Ollama
+    0.24.0 / GB10). Full chain green (19.6s): init → model add → live model test
+    → package install → live run → sealed export → offline verify → VERIFIED;
+    both package self-tests PASS. (Spark RAM was first freed from vLLM
+    contention — see docs/CONTENT_MIGRATION.md.) G2 "customer brings the model"
+    now has a live-Ollama proof, not just the offline contract corpus.
   - **§9 ~845 coverage** — at ~244; the large remainder is (a) unbuilt
     features (parallel-safe exec, summarization-on-overflow, deterministic
     replay, schema migrations, stale-lock detection, classification ceilings,
@@ -81,7 +86,8 @@ Last updated: 2026-08-31.
 | Service E2E: kill mid-run → restart → resume | ✅ | `test_sessions.py::test_kill_mid_run_then_recover_quarantines`, `test_service.py` |
 | Package re-verified at each execution (G3) | ✅ | `test_registry.py` (tamper-on-disk / revocation after install → run refused) |
 | Session cancel kills in-flight process tree, no orphan (G5) | ✅ | `test_cancel.py::test_cancel_kills_inflight_tree_no_orphan` |
-| §5 install story steps 2–6 over the CLI | ✅ | `test_e2e_install_story.py`, `test_cli_verbs.py` (step 1 MSI = OPEN) |
+| §5 install story steps 2–6 over the CLI | ✅ | `test_e2e_install_story.py` (offline + LIVE gemma3 on the Spark), `test_cli_verbs.py` (step 1 MSI = OPEN) |
+| Package self-tests pass against Ollama (G2) | ✅ live | selfconnect-enterprise self-tests PASS live on gemma3 (docs/CONTENT_MIGRATION.md) |
 | No secret ever on disk plaintext; redaction proven | ✅ | `test_vault.py`, `test_redaction.py`, `test_backup.py` |
 | MSI installs on a clean Windows box; init→…→export under 30 min | ⛔ OPEN | installer scaffolds only; WiX build + clean-box run not performed here |
 | License expiry → read-only evidence, never bricks | ✅ | `test_license.py::test_expired_license_grace_readonly` |
