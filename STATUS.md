@@ -15,26 +15,47 @@ Last updated: 2026-08-31.
 | 8 | Remaining adapters + ops surface | ✅ complete | +21 (209 cumulative; 203 pass + 6 platform-skip on Windows) |
 | 9 | Hardening + full matrix | ✅ complete | +6 (215 cumulative; 209 pass + 6 platform-skip on Windows) |
 
-## Design reconciliation & coverage closure (2026-08-31, post-Phase-9)
+## Design reconciliation & goal-impact closure (2026-08-31, post-Phase-9)
 
-- **Original design doc NOT yet on disk.** `docs/SELFCONNECT_RUNTIME_DESIGN.md`
-  is still the ADR-001 reconstruction (SHA-256 `58b017bf…`, identical to commit
-  e521cab); no original found anywhere searched. The owner's referenced
-  `~600-test` §9 target and suite table live only in the original. The
-  reconstruction-vs-original diff (step 1) and the per-suite coverage mapping
-  (step 2) are BLOCKED on the original arriving.
-- **What was produced unblocked:** `docs/DESIGN_GAP_ANALYSIS.md` — a rigorous
-  §-by-§ audit of the code against the design-on-disk + DoD, enumerating every
-  UNIMPLEMENTED / UNDER-TESTED / DIVERGENT item with a prioritized closure plan.
-- **Coverage down-payment closed:** §3.2 "all adapters pass one shared
-  conformance corpus" was previously unproven → `tests/test_conformance.py`
-  (+11) now asserts the same build/parse contract across all five real adapters.
-  Suite now **230 tests (224 pass + 6 skip)**.
-- **Blocked on owner inputs:** (a) the true original design doc, to complete the
-  step-1 diff and the step-2 per-suite ~600 mapping; (b) the DGX Spark IP, for
-  the live Ollama package self-test; (c) a usable WiX/dotnet toolchain (`wix`
-  not found, `dotnet --version` errors here), for the MSI build + clean-box E2E.
-  These stay OPEN until supplied; no fabricated closure.
+- **Original design doc placed** at `docs/SELFCONNECT_RUNTIME_DESIGN.md`
+  (Production Design Document, author Ron Blake; ADR-011). It supersedes the
+  reconstruction and is authoritative. `docs/DESIGN_GAP_ANALYSIS.md` is
+  reconciled against it: goal-impact map (G1–G8), §9 coverage map (current vs
+  the ~845 target), and 20 new divergences the original surfaces.
+- **Closed, sequenced by goal impact (owner directive: G3/G5 first):**
+  - **G3 — verify-at-execution** (was a G3 violation). `scr/registry.py`
+    installs verified packages and re-verifies the STORED package at every
+    session start; tamper-on-disk / post-install revocation → run refused
+    before touching the model or a tool. `tests/test_registry.py` (+5).
+  - **G5 — real cancel** (was a status-flip). Sandbox tracks live worker trees
+    + `kill_all()`; kernel gains cooperative `cancel_check`; session cancel
+    kills the in-flight tree AND stops the loop — a grandchild never orphans a
+    cancel. `tests/test_cancel.py` (+3).
+  - **G1 — CLI verbs.** Added `package install/list`, `run`, `session
+    list/resume/export`, `model test`, `backup/restore` (`scr/cli.py` +
+    `scr/model_factory.py`). `tests/test_cli_verbs.py` (+4) incl. a real
+    `scr run` against a local Ollama-shaped stub.
+  - **§5 install story E2E** (steps 2–6) scripted in
+    `tests/test_e2e_install_story.py` (+1): init→model add→package
+    install→run→export→verify. Offline via stub; **live via `SCR_OLLAMA_URL`**
+    (this is also the Ollama closure harness). `docs/CLEAN_BOX_TEST.md` carries
+    the manual VM + MSI-build steps.
+  - Coverage: §3.2 shared conformance corpus (`tests/test_conformance.py`, +11)
+    and the newline-injected-exec-arg denial (capability regression, +1).
+  - Suite now **244 tests (238 pass + 6 skip)**, up from 230.
+- **Still OPEN (owner-side inputs / environment):**
+  - **MSI build + clean-box step 1** — WiX/dotnet not usable here (`wix`
+    absent, `dotnet --version` errors). Steps 2–6 automated; step 1 manual
+    procedure documented. Also needs a thin `scr-service.exe` entry.
+  - **Live Ollama self-test** — DGX Spark unreachable from here (both known
+    Spark IPs returned nothing on :11434; Ollama still localhost-bound). Ready
+    to run the moment `SCR_OLLAMA_URL` is provided.
+  - **§9 ~845 coverage** — at ~244; the large remainder is (a) unbuilt
+    features (parallel-safe exec, summarization-on-overflow, deterministic
+    replay, schema migrations, stale-lock detection, classification ceilings,
+    parent-revocation chain invalidation — see DESIGN_GAP_ANALYSIS §C), (b)
+    live-model conformance rows (Ollama), (c) installer/E2E rows (MSI). Each
+    row justified in the gap analysis; sequenced by goal impact next.
 
 ## Content migration (SelfConnect → `.scpkg`)
 
@@ -58,6 +79,9 @@ Last updated: 2026-08-31.
 | Any single-byte package tamper detected + localized; revoked versions refuse | ✅ | `test_loader.py`, `test_merkle.py`, `test_signing.py` |
 | Evidence bundle verifies offline on a clean machine | ✅ | `test_evidence.py::test_offline_standalone_verifier_no_scr` |
 | Service E2E: kill mid-run → restart → resume | ✅ | `test_sessions.py::test_kill_mid_run_then_recover_quarantines`, `test_service.py` |
+| Package re-verified at each execution (G3) | ✅ | `test_registry.py` (tamper-on-disk / revocation after install → run refused) |
+| Session cancel kills in-flight process tree, no orphan (G5) | ✅ | `test_cancel.py::test_cancel_kills_inflight_tree_no_orphan` |
+| §5 install story steps 2–6 over the CLI | ✅ | `test_e2e_install_story.py`, `test_cli_verbs.py` (step 1 MSI = OPEN) |
 | No secret ever on disk plaintext; redaction proven | ✅ | `test_vault.py`, `test_redaction.py`, `test_backup.py` |
 | MSI installs on a clean Windows box; init→…→export under 30 min | ⛔ OPEN | installer scaffolds only; WiX build + clean-box run not performed here |
 | License expiry → read-only evidence, never bricks | ✅ | `test_license.py::test_expired_license_grace_readonly` |
