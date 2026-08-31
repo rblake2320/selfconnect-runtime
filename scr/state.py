@@ -86,6 +86,10 @@ CREATE TABLE IF NOT EXISTS agent_tokens(
   subject TEXT NOT NULL,
   role TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS seat_holders(
+  subject TEXT PRIMARY KEY,
+  acquired_at REAL NOT NULL
+);
 """
 
 

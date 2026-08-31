@@ -133,6 +133,18 @@ currently-unproven claim.
   (system + SUMMARY + recent, fewer than the full history) yet the run
   completes and the summary preserves an early-message trace; the full history
   remains in the store; no compaction below threshold. Closes C2 (G-graceful).
+- **P2.6 — Ops trio (§7, §3.8).**
+  - **Seat enforcement (§7):** `scr/seats.py` `SeatManager` + `seat_holders`
+    table; distinct concurrent holders bounded to the license seat count;
+    re-acquire is free, release frees a seat, driven end-to-end by
+    `License.seats`. `tests/test_seats.py` (+5).
+  - **/metrics off-by-default (§3.8):** service `/metrics` route returns
+    Prometheus text only when the registry is enabled (404 otherwise); run
+    counters increment on `/runs`. `tests/test_metrics_logrotate.py`.
+  - **Log rotation (§3.8, §5):** `configure_rotating_json_logging`
+    (RotatingFileHandler, size-capped, backups, redaction). Tests prove
+    rotation creates backups and secrets are redacted. `test_metrics_logrotate.py`
+    (+4 combined). Closes C14, C18, C20.
 
 ## Content migration (SelfConnect → `.scpkg`)
 

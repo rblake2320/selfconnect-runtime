@@ -49,9 +49,12 @@ class ApprovalRequest(BaseModel):
 
 
 def create_app(store: Store, kernel_factory: KernelFactory,
-               evidence_key: Optional[bytes] = None) -> FastAPI:
+               evidence_key: Optional[bytes] = None,
+               metrics=None) -> FastAPI:
+    from .observability import MetricsRegistry
     app = FastAPI(title="SelfConnect Runtime", version="0.2.0")
     manager = SessionManager(store, kernel_factory)
+    metrics = metrics if metrics is not None else MetricsRegistry()  # off by default
 
     def auth(authorization: str = Header(default="")) -> dict:
         token = authorization[7:] if authorization.startswith("Bearer ") else authorization
@@ -71,8 +74,10 @@ def create_app(store: Store, kernel_factory: KernelFactory,
 
     @app.post("/runs")
     def create_run(req: RunRequest, subject: dict = Depends(guard("run"))):
+        metrics.inc("scr_runs_total")
         job = manager.enqueue(req.user_text, req.idem_key)
         result = manager.run_job(job.job_id)
+        metrics.inc(f"scr_run_{result.stopped_reason}_total")
         return {"job_id": job.job_id, "session_id": job.session_id,
                 "deduped": job.deduped, "stopped_reason": result.stopped_reason,
                 "final_text": result.final_text,
@@ -127,6 +132,15 @@ def create_app(store: Store, kernel_factory: KernelFactory,
         v = Ledger(store).verify(session_id)
         return {"session_id": session_id, "ok": v.ok, "count": v.count,
                 "head": v.head, "error": v.error}
+
+    @app.get("/metrics")
+    def metrics_endpoint():
+        # Off by default (§3.8): nothing exposed until metrics are enabled.
+        if not metrics.enabled:
+            raise HTTPException(status_code=404, detail="metrics disabled")
+        from fastapi import Response
+        return Response(content=metrics.render_prometheus(),
+                        media_type="text/plain; version=0.0.4")
 
     @app.websocket("/ws/jobs/{job_id}")
     async def ws_events(websocket: WebSocket, job_id: str):

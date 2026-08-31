@@ -74,3 +74,20 @@ def configure_json_logging(logger: logging.Logger,
     logger.handlers.clear()
     logger.addHandler(handler)
     logger.addFilter(RedactionFilter(redaction_secrets or []))
+
+
+def configure_rotating_json_logging(logger: logging.Logger, path: str,
+                                    max_bytes: int = 10 * 1024 * 1024,
+                                    backup_count: int = 5,
+                                    redaction_secrets: Optional[list[str]] = None) -> None:
+    """Structured JSON logs to a size-capped rotating file (§3.8, §5): at most
+    `backup_count` rotated files of `max_bytes` each, redaction applied."""
+    from logging.handlers import RotatingFileHandler
+
+    from .redaction import RedactionFilter
+    handler = RotatingFileHandler(path, maxBytes=max_bytes,
+                                  backupCount=backup_count, encoding="utf-8")
+    handler.setFormatter(JsonLogFormatter())
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.addFilter(RedactionFilter(redaction_secrets or []))
