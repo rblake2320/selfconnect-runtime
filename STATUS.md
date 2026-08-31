@@ -66,6 +66,22 @@ Last updated: 2026-08-31.
     live-model conformance rows (Ollama), (c) installer/E2E rows (MSI). Each
     row justified in the gap analysis; sequenced by goal impact next.
 
+## §9 backlog closure (goal-impact order, gated commits)
+
+Sequenced per the owner directive; one gated commit per item with its
+adversarial suite. ~845 is a target not a quota — each test proves a
+currently-unproven claim.
+
+- **P0.1 — Schema migrations + pre-migration snapshot + auto-restore (§6).**
+  `scr/migrations.py`: forward-only migrations keyed on `PRAGMA user_version`;
+  each runs in a transaction AND behind a SQLite-backup snapshot; a failure
+  rolls back AND restores from the snapshot, so a partial/non-transactional
+  migration can never corrupt a customer DB. `tests/test_migrations.py` (+7):
+  ordered apply + version advance, idempotent re-run, forward-only (no
+  downgrade), **failed migration auto-restores and holds the version**,
+  snapshot-restore primitive reverts an auto-committed change, duplicate
+  version rejected. Closes gap C12 (G5 crash-safety of the updater path).
+
 ## Content migration (SelfConnect → `.scpkg`)
 
 - Done + tested: `packages/selfconnect-enterprise/` ported to `.scpkg` source
