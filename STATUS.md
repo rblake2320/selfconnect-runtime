@@ -123,6 +123,16 @@ currently-unproven claim.
   within / unknown rejected / attenuation lowers / kernel folds denial;
   revoking a parent severs descendants, revoking a node spares siblings,
   revoking the root severs everything. Closes C7 + C8 (G6/G3).
+- **P1.5 — Summarization-on-overflow (§3.1).** When the assembled context
+  estimate exceeds `Guards.summarize_at_tokens`, the kernel compacts older
+  messages into one bounded extractive summary and keeps the last
+  `summarize_keep_recent` verbatim — so a long session degrades gracefully
+  instead of hitting the hard budget stop. Crucially the compaction is a VIEW:
+  the store and ledger keep the complete history (evidence) untouched.
+  `tests/test_summarization.py` (+3): overflow compacts the model's context
+  (system + SUMMARY + recent, fewer than the full history) yet the run
+  completes and the summary preserves an early-message trace; the full history
+  remains in the store; no compaction below threshold. Closes C2 (G-graceful).
 
 ## Content migration (SelfConnect → `.scpkg`)
 

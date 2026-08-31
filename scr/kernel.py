@@ -63,6 +63,14 @@ class Guards:
     # Budget governor: real accumulated adapter token counts (in+out) across
     # the session. Default high so it never trips unexpectedly.
     max_total_tokens: int = 2_000_000
+    # Summarization-on-overflow (§3.1): when the assembled context estimate
+    # exceeds `summarize_at_tokens`, older messages are compacted into a summary
+    # (the STORE keeps the full history; only the model's view is compacted),
+    # keeping the last `summarize_keep_recent` messages verbatim. Set below
+    # max_token_estimate so a long session degrades gracefully instead of
+    # hitting the hard stop.
+    summarize_at_tokens: int = 150_000
+    summarize_keep_recent: int = 6
 
 
 @dataclass
@@ -141,6 +149,32 @@ class Kernel:
         self.store.journal_append(session_id, "ASSEMBLE", {"task": True})
         return self._loop(session_id)
 
+    def _summarize(self, msgs: list[dict[str, str]]) -> str:
+        """Deterministic extractive compaction of older messages into one
+        bounded summary. Real (not a stub): preserves an ordered role-tagged
+        trace so the model retains context of what came before."""
+        parts = []
+        for m in msgs:
+            content = " ".join(m["content"].split())      # collapse whitespace
+            parts.append(f"{m['role']}: {content[:160]}")
+        joined = " | ".join(parts)
+        return (f"[SUMMARY of {len(msgs)} earlier messages] {joined}")[:4000]
+
+    def _assemble_context(self, session_id: str) -> list[dict[str, str]]:
+        """Build the model's view of the conversation, compacting older
+        messages when the estimate overflows. The STORE (and ledger) keep the
+        complete history untouched — only the model's window is compacted."""
+        history = self.store.get_messages(session_id)
+        messages = [{"role": "system", "content": self.system_prompt}] + history
+        if _estimate_tokens(messages) <= self.guards.summarize_at_tokens:
+            return messages
+        keep = self.guards.summarize_keep_recent
+        if len(history) <= keep:
+            return messages          # nothing meaningful to compact
+        old, recent = history[:-keep], history[-keep:]
+        summary = {"role": "system", "content": self._summarize(old)}
+        return [messages[0], summary] + recent
+
     def _total_tokens(self, session_id: str) -> int:
         rows = self.store.conn.execute(
             "SELECT event FROM ledger WHERE session_id=?", (session_id,)
@@ -167,8 +201,7 @@ class Kernel:
             if self.cancel_check is not None and self.cancel_check():
                 return self._stop(session_id, iteration, "cancelled")
 
-            messages = [{"role": "system", "content": self.system_prompt}]
-            messages += self.store.get_messages(session_id)
+            messages = self._assemble_context(session_id)
 
             # ---- guards --------------------------------------------------
             if _estimate_tokens(messages) > self.guards.max_token_estimate:
