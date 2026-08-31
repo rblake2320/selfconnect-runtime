@@ -24,6 +24,53 @@ class RegistryError(Exception):
     pass
 
 
+def check_requirements(manifest: dict, runtime_version: str,
+                       installed_versions: dict[str, str],
+                       model_caps: Optional[dict] = None) -> list[str]:
+    """Validate a package manifest's compatibility declarations (§3.4). Returns
+    a list of unmet-requirement messages (empty = compatible). Deny-by-default:
+    an unparseable constraint is treated as unmet.
+
+    Recognized manifest keys (all optional):
+      runtime: {min: "<semver>"}                 — min SCR runtime version
+      requires: {pkg: "<constraint>", ...}       — dependency packages
+      model_requirements: {min_context: int, tool_calls: bool}
+    """
+    from .semver import SemverError, satisfies
+    problems: list[str] = []
+
+    rt = (manifest.get("runtime") or {}).get("min")
+    if rt:
+        try:
+            if not satisfies(runtime_version, f">={rt}"):
+                problems.append(
+                    f"requires runtime >= {rt}, have {runtime_version}")
+        except SemverError as e:
+            problems.append(f"bad runtime constraint: {e}")
+
+    for dep, constraint in (manifest.get("requires") or {}).items():
+        have = installed_versions.get(dep)
+        if have is None:
+            problems.append(f"missing dependency {dep!r} ({constraint})")
+            continue
+        try:
+            if not satisfies(have, constraint):
+                problems.append(
+                    f"dependency {dep} {have} does not satisfy {constraint}")
+        except SemverError as e:
+            problems.append(f"bad dependency constraint for {dep}: {e}")
+
+    reqs = manifest.get("model_requirements") or {}
+    caps = model_caps or {}
+    if "min_context" in reqs:
+        if int(caps.get("context", 0)) < int(reqs["min_context"]):
+            problems.append(
+                f"model context {caps.get('context', 0)} < required {reqs['min_context']}")
+    if reqs.get("tool_calls") and not caps.get("tool_calls", False):
+        problems.append("model does not support tool calls")
+    return problems
+
+
 @dataclass
 class InstalledPackage:
     name: str
@@ -131,6 +178,19 @@ class PackageRegistry:
         idx[res.package] = {"version": res.version, "path": dest, "key_id": key_id_v}
         self._save_index(idx)
         return UpdateOutcome(True, res.version, "promoted", st)
+
+    def reload(self, name: str) -> tuple[bool, Optional[dict]]:
+        """Hot-reload (§3.4): re-verify the installed package and return its
+        fresh manifest WITHOUT a service restart. A package re-signed/updated
+        on disk is picked up; a tampered one is refused (no stale content
+        served)."""
+        res = self.verify_installed(name)
+        if not res.ok:
+            return False, None
+        inst = self.get(name)
+        from .package import Package
+        with Package(inst.path) as pkg:
+            return True, dict(pkg.manifest)
 
     def session_guard(self, name: str):
         """Return a zero-arg callable that re-verifies the package; a

@@ -191,6 +191,13 @@ currently-unproven claim.
   (+3): passing self-tests promote to the new version; **failing self-tests
   roll back to the prior version with no leftover shadow**; an untrusted update
   is rejected and never promoted. Closes C13.
+- **C6 — Manifest semver / deps / min-runtime + hot-reload (§3.4).**
+  `scr/semver.py` (parse + constraint satisfies); `registry.check_requirements`
+  validates a manifest's `runtime.min`, `requires` dependency constraints, and
+  `model_requirements` (min_context, tool_calls) — deny-by-default on a bad
+  constraint. `registry.reload(name)` hot-reloads by re-verifying the installed
+  package and returning its fresh manifest without a restart, refusing tampered
+  content. `tests/test_manifest_reqs.py` (+7). Closes C6.
 
 ## Content migration (SelfConnect → `.scpkg`)
 
