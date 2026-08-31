@@ -1,0 +1,14 @@
+[project]
+name = "selfconnect-runtime"
+version = "0.2.0"
+description = "SelfConnect Runtime (SCR) — self-hosted journaled agent runtime with deny-by-default capability enforcement and a tamper-evident ledger. PRIVATE, pre-disclosure."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
