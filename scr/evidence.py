@@ -83,6 +83,19 @@ def export_bundle(store: Store, session_id: str, key: bytes, out_path: str,
 
 
 def _load_verifier_source() -> str:
+    """Read the standalone verifier's source to embed in the bundle. Works both
+    from the source tree AND from a frozen (PyInstaller) exe, where the source
+    is bundled as package data rather than sitting next to the bytecode."""
+    # 1) packaged resource — resolves inside a frozen bundle when the .py was
+    #    added as data (see the PyInstaller --add-data flag).
+    try:
+        from importlib.resources import files
+        res = files("scr").joinpath("_evidence_verifier.py")
+        if res.is_file():
+            return res.read_text(encoding="utf-8")
+    except (ModuleNotFoundError, FileNotFoundError, OSError, TypeError):
+        pass
+    # 2) source-tree fallback
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "_evidence_verifier.py")
     with open(path, "r", encoding="utf-8") as f:

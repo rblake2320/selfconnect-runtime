@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SelfConnect Runtime MSI — WiX v7 (v4+ unified schema; built with
+     `wix build Package.wxs`, NOT v3 candle/light). Installs the SCR core
+     Windows Service, the `scr` CLI on PATH, and a terminal launcher stub
+     (design §5 step 1). Unsigned for now — Authenticode is a listed residual
+     pending the code-signing cert. Requires the frozen exes in dist\. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="SelfConnect Runtime"
+           Manufacturer="SelfConnect"
+           Version="0.2.0.0"
+           UpgradeCode="6F3B2A10-0000-4000-8000-53435230534B"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of SelfConnect Runtime is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Install tree under Program Files\SelfConnect Runtime -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="SelfConnect Runtime" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppShortcutDir" Name="SelfConnect Runtime" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="SCR" Directory="INSTALLFOLDER">
+      <!-- CLI, plus INSTALLFOLDER added to the system PATH so `scr` resolves -->
+      <Component Id="ScrCli" Guid="7A1C0002-0000-4000-8000-53435230534B">
+        <File Id="ScrExe" Source="dist\scr.exe" KeyPath="yes" />
+        <Environment Id="ScrOnPath" Name="PATH" Value="[INSTALLFOLDER]"
+                     Part="last" Action="set" System="yes" Permanent="no" />
+      </Component>
+
+      <!-- Core service host, registered as a Windows Service -->
+      <Component Id="ScrService" Guid="7A1C0003-0000-4000-8000-53435230534B">
+        <File Id="ScrServiceExe" Source="dist\scr-service.exe" KeyPath="yes" />
+        <ServiceInstall Id="ScrSvcInstall"
+                        Name="SelfConnectRuntime"
+                        DisplayName="SelfConnect Runtime"
+                        Description="Journaled, capability-enforced agent runtime (loopback only)."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Vital="yes" />
+        <ServiceControl Id="ScrSvcControl"
+                        Name="SelfConnectRuntime"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- Terminal launcher stub: a Start-Menu shortcut that opens a console
+           with the scr CLI available (the Electron terminal ships separately). -->
+      <Component Id="ScrTerminalStub" Guid="7A1C0004-0000-4000-8000-53435230534B">
+        <File Id="ScrTerminalCmd" Source="scr-terminal.cmd" KeyPath="yes" />
+        <Shortcut Id="ScrTerminalShortcut"
+                  Directory="AppShortcutDir"
+                  Name="SelfConnect Runtime Terminal"
+                  Target="[INSTALLFOLDER]scr-terminal.cmd"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveAppShortcutDir" Directory="AppShortcutDir" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="SelfConnect Runtime" Level="1">
+      <ComponentGroupRef Id="SCR" />
+    </Feature>
+  </Package>
+</Wix>

@@ -11,3 +11,8 @@ build/
 .scr-tmp-*
 *.lock
 .coverage
+
+# Windows build artifacts (large binaries — not source)
+*.msi
+installers/windows/dist/
+installers/windows/freeze/__pycache__/

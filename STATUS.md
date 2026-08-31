@@ -215,9 +215,37 @@ currently-unproven claim.
   SD noted as the multi-user hardening. Closes C16.
 
 **Tail complete:** every §C divergence (C1–C20) is now closed or explicitly
-residual (C11b OS-level read isolation → AppContainer/Landlock). The only
-remaining DoD gap is the **MSI build + clean-box step 1**, blocked on the
-WiX/dotnet toolchain (owner-side).
+residual (C11b OS-level read isolation → AppContainer/Landlock).
+
+## Installer / packaging closure (2026-08-31)
+
+- **`scr-service.exe` — Windows Service host** (`scr/service_main.py`): console
+  mode (uvicorn, testable) + a real ctypes SCM dispatcher (no pywin32) with
+  graceful stop that closes the store and releases the workspace lock.
+  `tests/test_service_host.py` (+2): real uvicorn serve on a live port →
+  graceful shutdown releases the lock; loopback bind-guard.
+- **Frozen artifacts** via PyInstaller (`pyinstaller==6.11.1`, build tool):
+  `scr.exe` (19.7 MB) + `scr-service.exe` (24 MB), self-contained (no repo
+  venv). Both exercised standalone; the **full §5 story ran LIVE through
+  `scr.exe`** against the DGX Spark Ollama (gemma3): init → model add → live
+  model test → package install → live run → sealed export → **VERIFIED**, and
+  the embedded `verify.py` offline-verified → **VERIFIED**.
+- **WiX v7 MSI** (`installers/windows/Package.wxs`, v4+ unified schema, `wix
+  build`): installs the service (ServiceInstall/ServiceControl), the CLI on
+  system PATH, and a terminal launcher stub. **Builds clean** to a valid 43 MB
+  MSI. Unsigned (Authenticode residual). WiX v7 required accepting the OSMF
+  EULA (`--acceptEula wix7`, per-invocation) — a FireGiant commercial
+  maintenance-fee agreement; evaluate for production or pin WiX v4 to avoid it.
+- **A real frozen-artifact bug was caught and fixed** (invisible in the venv
+  tests): `evidence._load_verifier_source` read a `.py` from disk, which a
+  PyInstaller exe doesn't ship — now bundles the verifier as package data and
+  resource-loads it (with a source-tree fallback). This is exactly why the
+  design tests installed artifacts, not the venv.
+- **OPEN (human, elevated):** the `msiexec` install + service SCM lifecycle on
+  a clean box — needs Administrator rights this environment lacks; scripted end
+  to end in `docs/CLEAN_BOX_TEST.md` with the 30-minute budget and pass
+  criteria. Plus: MSI Authenticode (pending cert), Electron terminal (ships
+  separately).
 
 ## Content migration (SelfConnect → `.scpkg`)
 
@@ -246,7 +274,7 @@ WiX/dotnet toolchain (owner-side).
 | §5 install story steps 2–6 over the CLI | ✅ | `test_e2e_install_story.py` (offline + LIVE gemma3 on the Spark), `test_cli_verbs.py` (step 1 MSI = OPEN) |
 | Package self-tests pass against Ollama (G2) | ✅ live | selfconnect-enterprise self-tests PASS live on gemma3 (docs/CONTENT_MIGRATION.md) |
 | No secret ever on disk plaintext; redaction proven | ✅ | `test_vault.py`, `test_redaction.py`, `test_backup.py` |
-| MSI installs on a clean Windows box; init→…→export under 30 min | ⛔ OPEN | installer scaffolds only; WiX build + clean-box run not performed here |
+| MSI installs on a clean Windows box; init→…→export under 30 min | ◑ engineering done; elevated run = human | MSI **builds** (`wix build`, WiX v7); frozen `scr.exe`/`scr-service.exe` run the **full §5 story LIVE** on the Spark → VERIFIED; the elevated `msiexec` install + service SCM lifecycle need admin this env lacks → literal script in `docs/CLEAN_BOX_TEST.md` |
 | License expiry → read-only evidence, never bricks | ✅ | `test_license.py::test_expired_license_grace_readonly` |
 | STATUS claims ⊆ tested reality | ✅ | this file; OPEN items labeled OPEN |
 
