@@ -87,8 +87,19 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 | `test_package.py` | 3 | Build/read round-trip; manifest covers every payload file; excludes itself |
 | `test_loader.py` | 10 | Valid load; **unsigned / untrusted-key / single-leaf-tamper (localized) / manifest mismatch / revoked-version** all rejected; rogue revocation can't brick a good package; self-tests pass/fail and refuse unverified packages |
 
+## Phase 5 — Ledger completion + evidence export (+6 tests, 139 cumulative)
+
+| Module | Responsibility |
+|---|---|
+| `scr/_evidence_verifier.py` | Pure-stdlib hash-chain + seal verifier — the single source of truth, embedded into every bundle |
+| `scr/evidence.py` | `export_bundle` (self-verifying `.scevidence` zip: bundle.json + bundle.hmac + embedded `verify.py`), `verify_bundle`, `seal_on_close` |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_evidence.py` | 6 | Export→verify OK; wrong key fails seals; event tamper breaks the chain; bundle mutation breaks the bundle seal; unsealed session handled; **offline subprocess proof** — embedded `verify.py` verifies a good bundle and rejects a tampered one with nothing but Python stdlib |
+
 ## What is NOT yet included
 
 FastAPI service surface, session-start loader wiring, installers, licensing —
-Phases 5–8 per the design doc. No gap between claims and code: everything
+Phases 6–8 per the design doc. No gap between claims and code: everything
 listed above is implemented and tested; everything not listed is not claimed.

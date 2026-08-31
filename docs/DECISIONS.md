@@ -64,3 +64,18 @@ localized reason — there is no code path where an error yields a pass. The
 `scr/signer.py` module is the only place private-key signing lives and is
 never imported by the loader or (future) service, keeping the publisher
 capability out of the customer installer.
+
+## ADR-006 — Evidence verifier is stdlib-only and embedded in the bundle (2026-08-31)
+
+The finish line requires an offline, self-verifiable ledger. Rather than make
+verification depend on an installed SCR, the verifier (`_evidence_verifier`)
+imports nothing beyond hashlib/hmac/json and is embedded verbatim into every
+exported `.scevidence` bundle as `verify.py`. An auditor with only Python
+stdlib runs `python verify.py bundle.json --key <hex>` and gets a yes/no. To
+avoid claim/code divergence between the standalone and SCR-side paths, both
+call the same module and the export reads that module's own source to embed —
+there is exactly one verifier. Events are stored in the bundle as their exact
+canonical strings (as the ledger persisted them), so verification never
+re-serializes and cannot drift across json versions. The subprocess test runs
+the embedded verifier in an isolated cwd with `-S` (no site) to prove the
+"nothing else installed" guarantee rather than asserting it.

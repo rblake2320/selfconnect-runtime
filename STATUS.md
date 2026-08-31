@@ -9,7 +9,7 @@ Last updated: 2026-08-31.
 | 2 | Sandboxed tool execution + MCP client host | ✅ complete | +25 (94 cumulative; 89 pass + 5 platform-skip on Windows) |
 | 3 | Capability kernel completion | ✅ complete | +13 (107 cumulative; 102 pass + 5 platform-skip on Windows) |
 | 4 | Package format, signing, loader | ✅ complete | +26 (133 cumulative; 128 pass + 5 platform-skip on Windows) |
-| 5 | Ledger completion + evidence export | not started | — |
+| 5 | Ledger completion + evidence export | ✅ complete | +6 (139 cumulative; 134 pass + 5 platform-skip on Windows) |
 | 6 | Service, API, sessions, orchestration | not started | — |
 | 7 | Vault, config, CLI, installers, updater, licensing | not started | — |
 | 8 | Remaining adapters + ops surface | not started | — |
@@ -90,12 +90,32 @@ Last updated: 2026-08-31.
 - Deferred: loader wiring at session start (Phase 6 service); full CLI verbs
   `scr package install|verify` (Phase 7 — functions exist now).
 
+## Phase 5 — implemented / tested / deferred
+
+- Implemented + tested: `scr/_evidence_verifier.py` — pure-stdlib
+  (hashlib/hmac/json) hash-chain + seal verifier, the single source of truth.
+  `scr/evidence.py` — `export_bundle` writes a self-verifying `.scevidence`
+  zip (bundle.json + bundle.hmac + an embedded copy of `verify.py` + README);
+  `verify_bundle` (SCR side) and `seal_on_close` (per-session seal). The
+  embedded verifier is the exact `_evidence_verifier` source, so standalone
+  and SCR-side verification cannot diverge.
+- Tested adversarially: export→verify OK; wrong key fails both seals; event
+  content tamper breaks the chain; bundle metadata mutation breaks the bundle
+  seal; unsealed session reports session-seal n/a but still verifies chain +
+  bundle; **offline proof** — the embedded `verify.py` run in a subprocess
+  from an isolated cwd (scr not importable, `-S` no-site) verifies a good
+  bundle (exit 0, "VERIFIED") and rejects a tampered one (exit 1, "TAMPERED").
+- Deferred: sealing key sourced from the vault (Phase 7 — key is passed in
+  now); `scr ledger export|verify` CLI verbs (Phase 7 — functions exist now).
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
 - `pyyaml==6.0.2` — policy files are YAML per design §3.3; safe_load only.
 - `cryptography==50.0.1` — Ed25519 package signing per design §3.4;
   constant-time verify, no hand-rolled crypto.
+- Phase 5 added **zero** dependencies (evidence path is stdlib-only by design,
+  so bundles verify with nothing installed).
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,
   ctypes Job Objects, resource, threading, queue, urllib, json).
 
