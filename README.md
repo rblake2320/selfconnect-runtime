@@ -43,9 +43,24 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 | `test_atomic.py` | 6 | Fault-injected crash before rename → original intact, temp cleaned; CRLF bytes verbatim |
 | `test_locks.py` | 4 | Same-process and true cross-process contention; lock freed on holder death |
 
-## What Phase 1 deliberately does NOT include
+## Phase 2 — Sandboxed execution + MCP host (+25 tests, 94 cumulative)
 
-Sandboxed worker processes, MCP client host, `.scpkg` signing/loading,
-FastAPI surface, installers, licensing — Phases 2–8 per the design doc.
-No gap between claims and code: everything listed above is implemented
-and tested; everything not listed is not claimed.
+| Module | Responsibility |
+|---|---|
+| `scr/sandbox.py` | Worker subprocesses: restricted-env allowlist, cwd jail, wall timeout with whole-tree kill, memory cap (Windows Job Object / POSIX RLIMIT_AS), cancel reaping, structured worker-output classification |
+| `scr/worker.py` | Sandboxed job entry (fs read/write/list, http_get, proc_exec); re-validates paths in-sandbox (defense in depth) |
+| `scr/tools_native.py` | Capability-checked-**before-spawn** native ToolSpecs; correct idempotency flags for crash recovery |
+| `scr/mcp_host.py` | stdio + streamable-HTTP MCP client host: handshake/list/call, scoped-env-only, manifest-scoped (deny-by-default) tool projection, crash→restart-with-backoff, idempotent-defaults-false |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_sandbox.py` | 8 | Timeout kills the whole tree (no orphan grandchild survives); explicit cancel reaps the tree; parent env secrets never reach a worker; memory cap enforced; garbage/timeout worker output classified, never crashed-through |
+| `test_tools_native.py` | 10 | `..` traversal + symlink escape denied **before** any spawn; write outside write-roots denied; non-allowlisted host/binary denied; real read/write/list/exec inside the jail; idempotency flags match the design |
+| `test_mcp_host.py` | 7 | Handshake/list/call round-trip; scoped env only; crash-mid-stream → restart → retry succeeds; denied-capability MCP call never sent to the server; idempotent defaults to false; full kernel loop drives an MCP tool under enforcement |
+
+## What is NOT yet included
+
+`.scpkg` signing/loading, HITL approval gates, FastAPI surface, installers,
+licensing — Phases 3–8 per the design doc. No gap between claims and code:
+everything listed above is implemented and tested; everything not listed is
+not claimed.
