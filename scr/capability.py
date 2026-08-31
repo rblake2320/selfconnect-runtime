@@ -25,6 +25,18 @@ class CapabilityDenied(Exception):
     pass
 
 
+# Classification ceilings (§3.3). Ordered least→most sensitive. A manifest's
+# ceiling bounds the classification of any tool it may invoke; deny-by-default:
+# an unknown level is rejected rather than assumed low.
+_CLASS_ORDER = {"public": 0, "internal": 1, "confidential": 2, "secret": 3}
+
+
+def classification_rank(level: str) -> int:
+    if level not in _CLASS_ORDER:
+        raise CapabilityDenied(f"unknown classification level: {level!r}")
+    return _CLASS_ORDER[level]
+
+
 def _reject_ads(path: str, windows: bool) -> None:
     """Reject NTFS alternate-data-stream syntax under Windows semantics.
     A drive-letter colon ('C:') is legal; any other ':' in a component is not."""
@@ -77,6 +89,9 @@ class CapabilityManifest:
     net_hosts: frozenset[str] = frozenset()
     exec_rules: tuple[ExecRule, ...] = ()
     max_budget_usd: float = 0.0
+    # Highest tool classification this manifest may invoke. Default "secret"
+    # (no restriction) for backward compatibility; an admin/policy lowers it.
+    classification_ceiling: str = "secret"
 
     # -- checks (all deny-by-default) ----------------------------------
     def check_tool(self, name: str) -> None:
@@ -103,6 +118,12 @@ class CapabilityManifest:
                 return
         raise CapabilityDenied(f"exec not permitted: {binary} {' '.join(args)}")
 
+    def check_classification(self, level: str) -> None:
+        if classification_rank(level) > classification_rank(self.classification_ceiling):
+            raise CapabilityDenied(
+                f"classification {level!r} exceeds ceiling "
+                f"{self.classification_ceiling!r}")
+
 
 def _roots_contained(child_roots: tuple[str, ...], parent_roots: tuple[str, ...]) -> tuple[str, ...]:
     """Keep only child roots that sit under some parent root."""
@@ -127,6 +148,9 @@ def attenuate(parent: CapabilityManifest, child: CapabilityManifest) -> Capabili
         if any(r.binary == pr.binary and r.arg_pattern == pr.arg_pattern
                for pr in parent.exec_rules)
     )
+    # Ceiling attenuates to the MORE restrictive (lower-ranked) of the two.
+    lower_ceiling = min((parent.classification_ceiling, child.classification_ceiling),
+                        key=classification_rank)
     return CapabilityManifest(
         tools=child.tools & parent.tools,
         fs_read_roots=_roots_contained(child.fs_read_roots, parent.fs_read_roots),
@@ -134,4 +158,5 @@ def attenuate(parent: CapabilityManifest, child: CapabilityManifest) -> Capabili
         net_hosts=child.net_hosts & parent.net_hosts,
         exec_rules=exec_rules,
         max_budget_usd=min(child.max_budget_usd, parent.max_budget_usd),
+        classification_ceiling=lower_ceiling,
     )

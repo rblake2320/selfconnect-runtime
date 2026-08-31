@@ -28,11 +28,22 @@ class AgentNode:
 @dataclass
 class Team:
     """A tree of agents; each node carries a manifest. Effective manifests are
-    computed by attenuation down the delegation path."""
+    computed by attenuation down the delegation path. Revoking any node severs
+    the delegation chain for it and all descendants (§3.3) — a child cannot
+    outlive the authority it was delegated from."""
     root: AgentNode
     edges: dict[str, list[str]] = field(default_factory=dict)   # parent -> children
     nodes: dict[str, AgentNode] = field(default_factory=dict)
     max_depth: int = 4
+    revoked: set = field(default_factory=set)
+
+    def revoke(self, name: str) -> None:
+        """Revoke an agent. Any descendant whose delegation path passes through
+        it is invalidated (chain severed)."""
+        self.revoked.add(name)
+
+    def is_severed(self, name: str) -> bool:
+        return any(n in self.revoked for n in self.path_to(name))
 
     def add(self, parent: str, child: AgentNode) -> None:
         if parent not in self.nodes and parent != self.root.name:
@@ -62,8 +73,12 @@ class Team:
         return chain
 
     def effective_manifest(self, name: str) -> CapabilityManifest:
-        """Attenuate the manifest down the whole delegation path."""
+        """Attenuate the manifest down the whole delegation path. A revoked
+        node anywhere on the path severs the chain — deny-all."""
         path = self.path_to(name)
+        if any(n in self.revoked for n in path):
+            raise DelegationError(
+                f"delegation chain to {name!r} severed by a revoked ancestor")
         eff = self.root.manifest
         for node_name in path[1:]:
             eff = attenuate(eff, self._node(node_name).manifest)

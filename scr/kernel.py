@@ -48,6 +48,9 @@ class ToolSpec:
     # §3.1: only tools DECLARED parallel-safe may run concurrently, and only
     # when also idempotent (so a crash mid-batch is always safe to reissue).
     parallel_safe: bool = False
+    # §3.3: the tool's classification; a manifest may only invoke tools at or
+    # below its classification ceiling.
+    classification: str = "public"
 
 
 # ------------------------------------------------------------------ config
@@ -229,8 +232,9 @@ class Kernel:
             return False
         try:
             self.manifest.check_tool(call.name)
+            self.manifest.check_classification(spec.classification)
         except CapabilityDenied:
-            return False
+            return False       # over-ceiling → sequential path folds the denial
         return True
 
     def _persist_precomputed(self, session_id: str, call: ToolCall,
@@ -380,6 +384,7 @@ class Kernel:
             self.manifest.check_tool(call.name)
             if spec is None:
                 raise CapabilityDenied(f"unknown tool: {call.name!r}")
+            self.manifest.check_classification(spec.classification)
         except CapabilityDenied as e:
             self.ledger.append(session_id, {
                 "type": "cap_denied", "tool": call.name, "reason": str(e),

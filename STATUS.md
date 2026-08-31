@@ -109,6 +109,20 @@ currently-unproven claim.
   leave the hash-chained ledger intact with matched EXEC_INTENT/EXEC_DONE
   pairs (no store corruption); a non-parallel-safe write breaks the batch and
   runs sequentially; a lone parallel-safe call is not batched. Closes C1 (G5).
+- **P1.4 — Parent-revocation chain invalidation + classification ceilings
+  (§3.3).** IP-sensitive (MELD-gated): the SEMANTICS are implemented and
+  tested; the encoding/wire format is intentionally undocumented anywhere in
+  docs/. Classification: `CapabilityManifest.classification_ceiling` +
+  `check_classification` (deny-by-default, unknown level rejected);
+  `ToolSpec.classification`; the kernel folds an over-ceiling call as a denial
+  and never executes it; attenuation lowers the ceiling to the more
+  restrictive. Revocation: `Team.revoke()` severs the delegation chain — a
+  revoked node invalidates itself and all descendants (`effective_manifest`
+  raises), siblings on other paths unaffected. `tests/
+  test_classification_revocation.py` (+8): ceiling denies higher / allows
+  within / unknown rejected / attenuation lowers / kernel folds denial;
+  revoking a parent severs descendants, revoking a node spares siblings,
+  revoking the root severs everything. Closes C7 + C8 (G6/G3).
 
 ## Content migration (SelfConnect → `.scpkg`)
 
