@@ -1,0 +1,13 @@
+# Package default policy. Ships with the package; an admin may only TIGHTEN it.
+require_approval:
+  # Destructive or outward-facing actions pause for a human.
+  - tool: fs_write
+    arg_match:
+      path: ".*(prod|release).*"
+  - tool: proc_exec
+    arg_match:
+      binary: ".*(rm|del|deploy).*"
+tighten:
+  # The package itself asserts no widening; admins narrow further via their own
+  # policies/*.yaml. Listed tools are the maximum this package will ever use.
+  tools: [fs_read, fs_list, fs_write, proc_exec]

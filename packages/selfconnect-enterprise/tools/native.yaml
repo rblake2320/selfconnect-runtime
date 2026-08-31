@@ -1,0 +1,8 @@
+# Native tools this package expects SCR to provide (built by scr.tools_native
+# and bound to the effective capability manifest). Declared for documentation +
+# the loader's completeness check.
+native_tools:
+  - fs_read
+  - fs_list
+  - fs_write
+  - proc_exec

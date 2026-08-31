@@ -15,6 +15,19 @@ Last updated: 2026-08-31.
 | 8 | Remaining adapters + ops surface | ✅ complete | +21 (209 cumulative; 203 pass + 6 platform-skip on Windows) |
 | 9 | Hardening + full matrix | ✅ complete | +6 (215 cumulative; 209 pass + 6 platform-skip on Windows) |
 
+## Content migration (SelfConnect → `.scpkg`)
+
+- Done + tested: `packages/selfconnect-enterprise/` ported to `.scpkg` source
+  (lead/worker agents, default policy with approval gates, MCP config, native
+  tools, a skill, self-tests). `scripts/build_enterprise_pkg.py` builds + signs
+  + verifies it; `tests/test_content_migration.py` proves build→sign→load,
+  tamper localization, and self-tests passing against a stand-in customer
+  model. `docs/CONTENT_MIGRATION.md` flags every Claude-Code assumption
+  rewritten against SCR's real tools/attenuation/policy.
+- **OPEN:** the design's "self-tests pass against **Ollama**" — Ollama was not
+  reachable during this pass, so self-tests ran against a scripted stand-in.
+  Closing it needs a live Ollama run (`scr package verify …`).
+
 ## Definition of Done — evidence map
 
 | DoD item (design §10) | Status | Evidence |

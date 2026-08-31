@@ -1,0 +1,11 @@
+# Declarative MCP server config for this package. The SCR MCP host launches /
+# supervises these; each server's tools are additionally gated by the effective
+# capability manifest (deny-by-default). idempotent defaults to false.
+servers:
+  - name: memoryweb
+    transport: stdio
+    command: ["python", "-m", "memoryweb_mcp"]
+    env:
+      MEMORYWEB_MODE: "readonly"
+    idempotent_tools: [search_memories, get_recent_memories]
+    call_timeout: 30

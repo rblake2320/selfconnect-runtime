@@ -1,0 +1,14 @@
+# Worker agent — executes scoped work under the lead. Its effective capability
+# is attenuated against the lead's at the delegation edge (never wider).
+name: worker
+role: worker
+system_prompt: >
+  You are a SelfConnect worker. Do exactly the delegated sub-task using only
+  the tools you have been granted. Report the result to the lead.
+capabilities:
+  tools: [fs_read, fs_list, fs_write, proc_exec]
+  fs_read_roots: ["${WORKSPACE}"]
+  fs_write_roots: ["${WORKSPACE}/out"]
+  exec_rules:
+    - binary: "git"
+      arg_pattern: "status.*"

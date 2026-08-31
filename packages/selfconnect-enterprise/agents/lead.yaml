@@ -1,0 +1,15 @@
+# Lead agent — the delegator. Ported from the SelfConnect "team lead" role.
+# NOTE: the original SelfConnect content assumed Claude Code supplied the loop,
+# its tool names, and subagent semantics. Rewritten against SCR's actual tools
+# and capability model. See docs/CONTENT_MIGRATION.md.
+name: lead
+role: lead
+system_prompt: >
+  You are the SelfConnect lead agent. Decompose the task, delegate to workers,
+  and assemble the result. You may read the workspace and message workers; you
+  may not write files or run processes directly.
+capabilities:
+  tools: [fs_read, fs_list]
+  fs_read_roots: ["${WORKSPACE}"]
+  net_hosts: []
+delegates: [worker]
