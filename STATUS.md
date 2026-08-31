@@ -81,6 +81,16 @@ currently-unproven claim.
   downgrade), **failed migration auto-restores and holds the version**,
   snapshot-restore primitive reverts an auto-committed change, duplicate
   version rejected. Closes gap C12 (G5 crash-safety of the updater path).
+- **P0.2 — Stale-lock detection (PID + boot-id + heartbeat) (§3.5).**
+  `scr/locks.py` gains a metadata sidecar (never OS-locked) recording pid,
+  boot-id, host, heartbeat; `probe()` classifies free / live /
+  stale_other_boot / stale_heartbeat; `break_stale()` reclaims a dead/hung
+  lock but refuses a live one; `heartbeat()` keeps a long holder live.
+  `tests/test_lock_staleness.py` (+7): live-while-held, heartbeat refresh,
+  **hung holder (OS lock held + stale heartbeat) detected as stale**,
+  **previous-boot leftover is reclaimable so a restart isn't blocked**,
+  break_stale refuses a live lock / clears a dead one. Existing OS-lock
+  contention + death-release tests unchanged. Closes C9 (G5).
 
 ## Content migration (SelfConnect → `.scpkg`)
 
