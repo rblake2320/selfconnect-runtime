@@ -98,8 +98,25 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 |---|---|---|
 | `test_evidence.py` | 6 | Export→verify OK; wrong key fails seals; event tamper breaks the chain; bundle mutation breaks the bundle seal; unsealed session handled; **offline subprocess proof** — embedded `verify.py` verifies a good bundle and rejects a tampered one with nothing but Python stdlib |
 
+## Phase 6 — Service, API, sessions, orchestration (+22 tests, 161 cumulative)
+
+| Module | Responsibility |
+|---|---|
+| `scr/rbac.py` | Deny-by-default role matrix (admin/operator/auditor/viewer) |
+| `scr/sessions.py` | `SessionManager` + durable SQLite job queue: idempotency-key dedupe, cancel, `recover_all()` reclassifying crashed jobs via kernel recovery |
+| `scr/orchestration.py` | Team topology with per-edge `capability.attenuate`, depth limits, persisted inter-agent mailbox |
+| `scr/service.py` | FastAPI REST + WebSocket; Bearer auth; RBAC-guarded routes; loopback-only bind-guard (refuses non-loopback without TLS+auth) |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_rbac.py` | 6 | Role matrix deny-by-default across all four roles |
+| `test_orchestration.py` | 5 | Delegation attenuates per edge (grandchild ⊆ child ⊆ parent); depth limit; mailbox order |
+| `test_sessions.py` | 4 | Enqueue/run; idempotent enqueue runs once; cancel; **kill mid-run → `recover_all()` quarantines** (no double-fire) |
+| `test_service.py` | 7 | Auth required; RBAC per route; idempotent run; ledger-read role split; bind-guard; WS streams events; approval gate over REST runs the tool exactly once |
+
 ## What is NOT yet included
 
-FastAPI service surface, session-start loader wiring, installers, licensing —
-Phases 6–8 per the design doc. No gap between claims and code: everything
+Credential vault, `scr` CLI + first-run wizard, installers (MSI/winget/deb),
+updater, licensing — Phase 7; extra adapters + ops surface — Phase 8;
+full-matrix hardening — Phase 9. No gap between claims and code: everything
 listed above is implemented and tested; everything not listed is not claimed.

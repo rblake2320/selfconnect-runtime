@@ -65,13 +65,39 @@ CREATE TABLE IF NOT EXISTS approvals(
   approver TEXT NOT NULL,
   created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS jobs(
+  job_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  idem_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,            -- queued | running | done | cancelled | needs_review
+  user_text TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mailbox(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  from_agent TEXT NOT NULL,
+  to_agent TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_tokens(
+  token TEXT PRIMARY KEY,
+  subject TEXT NOT NULL,
+  role TEXT NOT NULL
+);
 """
 
 
 class Store:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, isolation_level=None)
+        # check_same_thread=False: the FastAPI service dispatches sync routes on
+        # a threadpool, so the connection is used from worker threads. WAL mode
+        # + synchronous=FULL + busy_timeout keep this safe for the single-tenant
+        # self-hosted service; SQLite serializes access internally.
+        self.conn = sqlite3.connect(db_path, isolation_level=None,
+                                    check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=FULL;")
@@ -187,3 +213,68 @@ class Store:
         if row is None:
             return None
         return {"status": row["status"], "approver": row["approver"]}
+
+    # -- jobs (durable queue) ------------------------------------------
+    def job_upsert(self, job_id: str, session_id: str, idem_key: str,
+                   status: str, user_text: str) -> dict[str, Any]:
+        """Insert a job, or return the existing one for this idem_key (dedupe)."""
+        existing = self.conn.execute(
+            "SELECT job_id, session_id, status FROM jobs WHERE idem_key=?",
+            (idem_key,),
+        ).fetchone()
+        if existing is not None:
+            return {"job_id": existing["job_id"], "session_id": existing["session_id"],
+                    "status": existing["status"], "deduped": True}
+        self.conn.execute(
+            "INSERT INTO jobs(job_id, session_id, idem_key, status, user_text,"
+            " created_at) VALUES(?,?,?,?,?,?)",
+            (job_id, session_id, idem_key, status, user_text, time.time()),
+        )
+        return {"job_id": job_id, "session_id": session_id, "status": status,
+                "deduped": False}
+
+    def job_set_status(self, job_id: str, status: str) -> None:
+        self.conn.execute("UPDATE jobs SET status=? WHERE job_id=?", (status, job_id))
+
+    def job_get(self, job_id: str) -> Optional[dict[str, Any]]:
+        row = self.conn.execute(
+            "SELECT job_id, session_id, idem_key, status, user_text FROM jobs"
+            " WHERE job_id=?", (job_id,)).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def jobs_by_status(self, status: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT job_id, session_id, idem_key, status, user_text FROM jobs"
+            " WHERE status=? ORDER BY created_at", (status,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def jobs_all(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT job_id, session_id, status FROM jobs ORDER BY created_at").fetchall()
+        return [dict(r) for r in rows]
+
+    # -- mailbox (inter-agent) -----------------------------------------
+    def mailbox_send(self, session_id: str, from_agent: str, to_agent: str,
+                     body: str) -> None:
+        self.conn.execute(
+            "INSERT INTO mailbox(session_id, from_agent, to_agent, body, created_at)"
+            " VALUES(?,?,?,?,?)", (session_id, from_agent, to_agent, body, time.time()))
+
+    def mailbox_inbox(self, session_id: str, to_agent: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT from_agent, to_agent, body FROM mailbox WHERE session_id=?"
+            " AND to_agent=? ORDER BY id", (session_id, to_agent)).fetchall()
+        return [dict(r) for r in rows]
+
+    # -- auth tokens ----------------------------------------------------
+    def token_put(self, token: str, subject: str, role: str) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO agent_tokens(token, subject, role) VALUES(?,?,?)",
+            (token, subject, role))
+
+    def token_get(self, token: str) -> Optional[dict[str, Any]]:
+        row = self.conn.execute(
+            "SELECT subject, role FROM agent_tokens WHERE token=?", (token,)).fetchone()
+        return dict(row) if row else None

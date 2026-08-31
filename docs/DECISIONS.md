@@ -79,3 +79,20 @@ canonical strings (as the ledger persisted them), so verification never
 re-serializes and cannot drift across json versions. The subprocess test runs
 the embedded verifier in an isolated cwd with `-S` (no site) to prove the
 "nothing else installed" guarantee rather than asserting it.
+
+## ADR-007 — FastAPI service; SQLite connection shared across threads (2026-08-31)
+
+Design §3.1 mandates a FastAPI REST + WebSocket service. FastAPI dispatches
+synchronous routes on a threadpool, so the SQLite connection is opened with
+`check_same_thread=False`; WAL mode + `synchronous=FULL` + `busy_timeout`
+keep this safe for the single-tenant self-hosted service (SQLite serializes
+access internally). The service binds loopback-only by default and a
+bind-guard refuses any non-loopback address unless both TLS and auth are
+configured. New dependencies fastapi/uvicorn/httpx/websockets are all
+mandated by the service surface. Tests use Starlette's in-process TestClient
+(no bound port) for hermetic, Windows-safe coverage; the loopback bind
+refusal is asserted directly against the guard function. Resume after an
+approval gate re-enters the model loop for the next turn — correct for a real
+adapter that responds to the tool result in the conversation; the mock in the
+service test is made conversation-aware to model that faithfully rather than
+replaying its script.

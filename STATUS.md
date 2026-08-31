@@ -10,7 +10,7 @@ Last updated: 2026-08-31.
 | 3 | Capability kernel completion | ✅ complete | +13 (107 cumulative; 102 pass + 5 platform-skip on Windows) |
 | 4 | Package format, signing, loader | ✅ complete | +26 (133 cumulative; 128 pass + 5 platform-skip on Windows) |
 | 5 | Ledger completion + evidence export | ✅ complete | +6 (139 cumulative; 134 pass + 5 platform-skip on Windows) |
-| 6 | Service, API, sessions, orchestration | not started | — |
+| 6 | Service, API, sessions, orchestration | ✅ complete | +22 (161 cumulative; 155 pass + 6 platform-skip on Windows) |
 | 7 | Vault, config, CLI, installers, updater, licensing | not started | — |
 | 8 | Remaining adapters + ops surface | not started | — |
 | 9 | Hardening + full matrix | not started | — |
@@ -108,12 +108,40 @@ Last updated: 2026-08-31.
 - Deferred: sealing key sourced from the vault (Phase 7 — key is passed in
   now); `scr ledger export|verify` CLI verbs (Phase 7 — functions exist now).
 
+## Phase 6 — implemented / tested / deferred
+
+- Implemented + tested: `scr/rbac.py` deny-by-default role matrix
+  (admin/operator/auditor/viewer); `scr/sessions.py` `SessionManager` +
+  durable SQLite job queue with idempotency-key dedupe, cancel, and
+  `recover_all()` that reclassifies crashed `running` jobs via kernel
+  recovery; `scr/orchestration.py` team topology with per-edge
+  `capability.attenuate`, depth limits, and a persisted inter-agent mailbox;
+  `scr/service.py` FastAPI app (REST runs/jobs/approve/deny/ledger + WS event
+  stream), Bearer-token auth, RBAC-guarded routes, and a loopback-only
+  bind-guard that refuses non-loopback without TLS+auth.
+- Tested adversarially: RBAC matrix (viewer can't run, auditor can't run,
+  operator can't manage tokens, unknown token/role denied); idempotent
+  enqueue runs once and returns the same job; **kill mid-run then
+  `recover_all()` quarantines** a non-idempotent job (no double-fire);
+  delegation attenuates per edge and grandchild ⊆ child ⊆ parent; depth limit
+  enforced; over REST — auth required, RBAC per route, idempotent run,
+  ledger-read role split, WS streams events, and the approval gate
+  (run→awaiting_approval→approve→resume→completed) runs the tool exactly once.
+- Deferred: TLS termination + real-port serving config (Phase 7 installer
+  wires uvicorn); WS live-tailing during a long run (current WS replays the
+  journaled events for a job — sufficient and tested); Windows named-pipe
+  transport (Phase 9 matrix).
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
 - `pyyaml==6.0.2` — policy files are YAML per design §3.3; safe_load only.
 - `cryptography==50.0.1` — Ed25519 package signing per design §3.4;
   constant-time verify, no hand-rolled crypto.
+- `fastapi==0.115.6` — REST + WebSocket service per design §3.1.
+- `uvicorn==0.34.0` — ASGI server for the installed service.
+- `httpx==0.28.1` — TestClient + the REST client the `scr` CLI uses (Phase 7).
+- `websockets==14.1` — WebSocket transport for run-event streaming.
 - Phase 5 added **zero** dependencies (evidence path is stdlib-only by design,
   so bundles verify with nothing installed).
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,
