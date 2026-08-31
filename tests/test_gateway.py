@@ -1,3 +1,4 @@
+import pytest
 from scr.gateway import (
     AnthropicAdapter,
     MockAdapter,
@@ -114,3 +115,12 @@ def test_all_adapters_share_one_internal_schema():
         {"content": [{"type": "text", "text": "x"}]})
     for r in (oc, ol, an):
         assert isinstance(r, ModelResponse) and r.text == "x" and r.tool_calls == ()
+
+
+def test_ollama_surfaces_server_error():
+    """A server-side error payload (e.g. runner OOM / model failed to load)
+    must raise, not masquerade as an empty completion."""
+    import pytest
+    a = OllamaAdapter("http://x", "m")
+    with pytest.raises(RuntimeError, match="ollama error"):
+        a.parse_response({"error": "model failed to load"})

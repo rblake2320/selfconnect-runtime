@@ -162,6 +162,10 @@ class OllamaAdapter:
         return url, headers, body
 
     def parse_response(self, payload: dict[str, Any]) -> ModelResponse:
+        if payload.get("error"):
+            # A server-side error (e.g. runner crash / model failed to load)
+            # must surface, never masquerade as an empty completion.
+            raise RuntimeError(f"ollama error: {payload['error']}")
         msg = payload.get("message") or {}
         calls = []
         for i, tc in enumerate(msg.get("tool_calls") or []):
