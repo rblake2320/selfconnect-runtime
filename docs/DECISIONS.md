@@ -138,6 +138,24 @@ clean-box install remains OPEN in STATUS because it cannot be honestly
 verified in this environment — labeling it OPEN is the rule-3 obligation, not
 a failure to hide.
 
+## ADR-012 — Worker privilege reduction: self-drop, not low-IL/AppContainer (2026-08-31)
+
+§3.6 claims sandboxed workers run with reduced privilege. Empirical testing on
+Windows (documented in commit history) established: a restricted + low-integrity
+token blocks system writes but ALSO blocks the worker's own temp/jail writes and
+Medium-IL pipe replies — which would break the pipe-based worker IPC. So the
+worker instead **self-hardens at startup** via `AdjustTokenPrivileges(
+DisableAllPrivileges=TRUE)` (Windows) / `prctl(PR_SET_NO_NEW_PRIVS)` (Linux),
+applied inside `scr.worker` before any job runs. This is real and non-breaking:
+the worker's privileges are provably disabled, it still cannot write protected
+system paths (non-admin + no privileges), and it retains the ability to serve
+its jail and pipe. OS-level READ isolation of arbitrary paths (beyond the
+capability kernel's `resolve_within` mediation, which already denies out-of-jail
+reads through the tool interface) requires AppContainer (Windows) / Landlock
+(Linux); that is a documented residual (C11b), not shipped here, because a
+half-built token/IL sandbox would regress the working, tested spawn path. The
+capability kernel remains the enforced read/write jail at the application layer.
+
 ## ADR-011 — Original design doc placed; supersedes the reconstruction (2026-08-31)
 
 The authoritative original design document ("SelfConnect Runtime — Production

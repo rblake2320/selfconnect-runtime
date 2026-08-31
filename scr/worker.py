@@ -85,6 +85,13 @@ _OPS = {
 
 
 def main() -> int:
+    # §3.6: reduce this worker's privilege before doing any work (defense in
+    # depth beneath the capability kernel). Best-effort; never fatal.
+    try:
+        from .privdrop import harden_current_process
+        harden_current_process()
+    except Exception:  # noqa: BLE001 — hardening must never break the worker
+        pass
     try:
         job = json.loads(sys.stdin.read())
         op = _OPS.get(job.get("op", ""))

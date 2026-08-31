@@ -146,6 +146,24 @@ currently-unproven claim.
     rotation creates backups and secrets are redacted. `test_metrics_logrotate.py`
     (+4 combined). Closes C14, C18, C20.
 
+## §9 tail closure (goal-impact order)
+
+- **C11 — Worker privilege reduction (§3.6).** Researched empirically on-box:
+  a restricted + low-integrity token blocks system writes but also blocks the
+  worker's own temp/jail writes and Medium-IL pipe replies (would break the
+  worker IPC), so the worker **self-hardens at startup** instead —
+  `scr/privdrop.py`: `AdjustTokenPrivileges(DisableAllPrivileges=TRUE)`
+  (Windows) / `prctl(PR_SET_NO_NEW_PRIVS)` (Linux), wired into `scr.worker`.
+  `tests/test_privdrop.py` (+5, real): worker token drops from N enabled
+  privileges to 0 (in an isolated subprocess); a real proc_exec write to
+  `C:\Windows` is OS-denied; the sandbox still serves a real jail write
+  (hardening didn't break it); the capability kernel denies an out-of-jail
+  read of a file the parent CAN read. **Residual (ADR-012, honest):** OS-level
+  read isolation of arbitrary paths needs AppContainer (Win) / Landlock
+  (Linux); the capability kernel is the enforced read/write jail today. Also
+  fixed the `GetCurrentProcess`/`GetTokenInformation` ctypes restype pitfalls
+  (researched, same class as the boot_id fix). Closes C11 (with C11b residual).
+
 ## Content migration (SelfConnect → `.scpkg`)
 
 - Done + tested: `packages/selfconnect-enterprise/` ported to `.scpkg` source
