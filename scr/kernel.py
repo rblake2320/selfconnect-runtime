@@ -124,6 +124,10 @@ class Kernel:
         self.guards = guards
         self.system_prompt = system_prompt
         self.policy = policy
+        # G5: optional cooperative cancel. A zero-arg predicate; when it returns
+        # True the loop stops with reason "cancelled" between iterations and
+        # before each tool call. Set by the SessionManager after construction.
+        self.cancel_check: Optional[Callable[[], bool]] = None
 
     # ---------------------------------------------------------------- run
     def run(self, session_id: str, user_text: str) -> RunResult:
@@ -153,6 +157,10 @@ class Kernel:
         ]
 
         for iteration in range(1, self.guards.max_iterations + 1):
+            # ---- cooperative cancel (G5) --------------------------------
+            if self.cancel_check is not None and self.cancel_check():
+                return self._stop(session_id, iteration, "cancelled")
+
             messages = [{"role": "system", "content": self.system_prompt}]
             messages += self.store.get_messages(session_id)
 
@@ -212,6 +220,11 @@ class Kernel:
         None when all executed; returns an approval_id (and journals
         AWAITING_APPROVAL with the remaining calls) when it pauses."""
         for i, call in enumerate(calls):
+            if self.cancel_check is not None and self.cancel_check():
+                # Stop folding further calls; the loop's next guard finalizes.
+                self.store.journal_append(session_id, "CANCELLED",
+                                          {"at_call": call.name})
+                return None
             if self.policy is not None and self.policy.requires_approval(call):
                 aid = _approval_id(session_id, call)
                 rec = self.store.approval_get(aid)

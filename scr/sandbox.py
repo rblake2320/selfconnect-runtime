@@ -197,6 +197,27 @@ class SandboxRunner:
                  tmp_dir: Optional[str] = None):
         self.limits = limits
         self.tmp_dir = tmp_dir
+        import threading
+        self._live: list[SandboxProc] = []
+        self._live_lock = threading.Lock()
+
+    def _register(self, proc: "SandboxProc") -> None:
+        with self._live_lock:
+            self._live.append(proc)
+
+    def _unregister(self, proc: "SandboxProc") -> None:
+        with self._live_lock:
+            if proc in self._live:
+                self._live.remove(proc)
+
+    def kill_all(self) -> int:
+        """Kill every in-flight worker process tree spawned via run_worker.
+        Returns how many were killed. Used by session cancel (G5)."""
+        with self._live_lock:
+            live = list(self._live)
+        for proc in live:
+            proc.kill()
+        return len(live)
 
     def start(self, argv: list[str], cwd: str,
               stdin_data: Optional[bytes] = None,
@@ -241,7 +262,14 @@ class SandboxRunner:
             [sys.executable, "-s", "-m", "scr.worker"], cwd=cwd,
             stdin_data=json.dumps(job_payload).encode("utf-8"), limits=lim,
         )
-        res = handle.wait(lim.timeout_seconds)
+        self._register(handle)
+        try:
+            res = handle.wait(lim.timeout_seconds)
+        finally:
+            self._unregister(handle)
+        if getattr(handle, "_killed", False) and res.status != "timeout":
+            return {"ok": False, "error": "cancelled",
+                    "detail": "worker tree killed by session cancel"}
         if res.status == "timeout":
             return {"ok": False, "error": "timeout",
                     "detail": f"exceeded {lim.timeout_seconds}s; tree killed"}

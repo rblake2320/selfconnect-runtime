@@ -1,0 +1,99 @@
+"""Installed-package registry — closes G3 ("verified at load AND at each
+execution").
+
+Install verifies a `.scpkg` and copies it into the SCR home. Every run then
+re-verifies the *stored* package before executing anything, so a package that
+is tampered on disk after install, or whose version is later revoked, is
+refused at session start — not trusted on the strength of a one-time install
+check.
+"""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+from dataclasses import dataclass
+from typing import Optional
+
+from .atomic import atomic_write_text
+from .loader import LoadResult, verify_package
+from .signing import Keystore, RevocationList
+
+
+class RegistryError(Exception):
+    pass
+
+
+@dataclass
+class InstalledPackage:
+    name: str
+    version: str
+    path: str
+    key_id: str
+
+
+class PackageRegistry:
+    def __init__(self, home: str, keystore: Keystore,
+                 revocations: Optional[RevocationList] = None):
+        self.home = home
+        self.dir = os.path.join(home, "packages")
+        os.makedirs(self.dir, exist_ok=True)
+        self.index_path = os.path.join(self.dir, "installed.json")
+        self.keystore = keystore
+        self.revocations = revocations
+
+    # -------------------------------------------------------------- index
+    def _load_index(self) -> dict:
+        if not os.path.exists(self.index_path):
+            return {}
+        with open(self.index_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save_index(self, idx: dict) -> None:
+        atomic_write_text(self.index_path, json.dumps(idx, sort_keys=True, indent=2))
+
+    # ------------------------------------------------------------- install
+    def install(self, scpkg_path: str) -> LoadResult:
+        """Verify then store. Refuses to install anything that does not verify
+        (unsigned / untrusted / tampered / revoked)."""
+        res = verify_package(scpkg_path, self.keystore, self.revocations)
+        if not res.ok:
+            return res
+        dest = os.path.join(self.dir, f"{res.package}-{res.version}.scpkg")
+        shutil.copyfile(scpkg_path, dest)
+        # record the merkle root so a later swap of the stored file is caught
+        from .package import Package
+        with Package(dest) as pkg:
+            key_id = (pkg.signature or {}).get("key_id", "")
+        idx = self._load_index()
+        idx[res.package] = {"version": res.version, "path": dest, "key_id": key_id}
+        self._save_index(idx)
+        return res
+
+    def list_installed(self) -> list[InstalledPackage]:
+        return [InstalledPackage(name, m["version"], m["path"], m.get("key_id", ""))
+                for name, m in sorted(self._load_index().items())]
+
+    def get(self, name: str) -> Optional[InstalledPackage]:
+        m = self._load_index().get(name)
+        if m is None:
+            return None
+        return InstalledPackage(name, m["version"], m["path"], m.get("key_id", ""))
+
+    # -------------------------------------------- verify-at-execution (G3)
+    def verify_installed(self, name: str) -> LoadResult:
+        """Re-verify the STORED package. Called at every session start."""
+        inst = self.get(name)
+        if inst is None:
+            return LoadResult(False, "not_installed", f"no installed package {name!r}")
+        if not os.path.exists(inst.path):
+            return LoadResult(False, "missing_on_disk",
+                              f"installed package file gone: {inst.path}")
+        return verify_package(inst.path, self.keystore, self.revocations)
+
+    def session_guard(self, name: str):
+        """Return a zero-arg callable that re-verifies the package; a
+        SessionManager calls it before running a job bound to this package."""
+        def _guard() -> LoadResult:
+            return self.verify_installed(name)
+        return _guard

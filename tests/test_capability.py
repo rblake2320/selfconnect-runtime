@@ -211,3 +211,18 @@ def test_attenuation_chain_is_monotonic(tmp_path):
     assert eff_leaf.tools <= eff_mid.tools <= root.tools
     # leaf asked for ws (wider than mid's ws/a) — must be dropped
     assert eff_leaf.fs_read_roots == ()
+
+
+# ---------------------------------------- exec arg-injection (newline vector)
+def test_exec_dotstar_rejects_newline_injected_args(tmp_path):
+    """A `.*` arg pattern must NOT authorize a multi-line / newline-injected
+    argument — `re.fullmatch('.*', ...)` excludes newlines by default, so an
+    attacker who smuggles a newline into an exec arg is denied. Rule authors
+    must opt into multi-line args explicitly with (?s)."""
+    m = manifest(tmp_path, exec_rules=(ExecRule("python", r".*"),))
+    m.check_exec("python", ["-c", "print(1)"])                     # single line OK
+    with pytest.raises(CapabilityDenied):
+        m.check_exec("python", ["-c", "print(1)\nimport os; os.system('x')"])
+    # explicit opt-in matches
+    m2 = manifest(tmp_path, exec_rules=(ExecRule("python", r"(?s).*"),))
+    m2.check_exec("python", ["-c", "line1\nline2"])                # now allowed
