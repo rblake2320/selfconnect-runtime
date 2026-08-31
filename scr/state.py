@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS seals(
   count INTEGER NOT NULL,
   hmac TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS approvals(
+  approval_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  status TEXT NOT NULL,            -- approved | denied
+  approver TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
 """
 
 
@@ -161,3 +168,22 @@ class Store:
             " created_at) VALUES(?,?,?,?,?)",
             (idem_key, session_id, tool, result, time.time()),
         )
+
+    # -- approvals (HITL gate) -----------------------------------------
+    def approval_put(
+        self, approval_id: str, session_id: str, status: str, approver: str
+    ) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO approvals(approval_id, session_id, status,"
+            " approver, created_at) VALUES(?,?,?,?,?)",
+            (approval_id, session_id, status, approver, time.time()),
+        )
+
+    def approval_get(self, approval_id: str) -> Optional[dict[str, Any]]:
+        row = self.conn.execute(
+            "SELECT status, approver FROM approvals WHERE approval_id=?",
+            (approval_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {"status": row["status"], "approver": row["approver"]}

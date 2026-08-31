@@ -26,9 +26,12 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from .capability import CapabilityDenied, CapabilityManifest
+
+if TYPE_CHECKING:
+    from .policy import Policy
 from .gateway import Adapter, ModelResponse, ToolCall, ToolDef
 from .ledger import Ledger
 from .state import Store
@@ -51,6 +54,9 @@ class Guards:
     max_token_estimate: int = 200_000
     max_wall_seconds: float = 3600.0
     cycle_repeat_threshold: int = 3
+    # Budget governor: real accumulated adapter token counts (in+out) across
+    # the session. Default high so it never trips unexpectedly.
+    max_total_tokens: int = 2_000_000
 
 
 @dataclass
@@ -58,7 +64,8 @@ class RunResult:
     session_id: str
     final_text: str
     iterations: int
-    stopped_reason: str  # completed | max_iterations | budget | wall_clock | loop_detected
+    stopped_reason: str  # completed | max_iterations | budget | wall_clock | loop_detected | awaiting_approval
+    pending_approval: Optional[str] = None  # approval_id when awaiting_approval
 
 
 @dataclass
@@ -88,6 +95,16 @@ def _cycle_signature(calls: tuple[ToolCall, ...]) -> str:
     return hashlib.sha256("|".join(sig).encode()).hexdigest()
 
 
+def _approval_id(session_id: str, call: ToolCall) -> str:
+    """Bind an approval to the EXACT action: session, tool, args, and the
+    model-emitted call id. Approving one action cannot authorize another."""
+    payload = json.dumps(
+        {"s": session_id, "t": call.name, "a": call.arguments, "c": call.id},
+        sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 class Kernel:
     def __init__(
         self,
@@ -97,6 +114,7 @@ class Kernel:
         manifest: CapabilityManifest,
         guards: Guards = Guards(),
         system_prompt: str = "You are a SelfConnect agent.",
+        policy: Optional["Policy"] = None,
     ):
         self.store = store
         self.ledger = Ledger(store)
@@ -105,11 +123,29 @@ class Kernel:
         self.manifest = manifest
         self.guards = guards
         self.system_prompt = system_prompt
+        self.policy = policy
 
     # ---------------------------------------------------------------- run
     def run(self, session_id: str, user_text: str) -> RunResult:
         self.store.add_message(session_id, "user", user_text)
         self.store.journal_append(session_id, "ASSEMBLE", {"task": True})
+        return self._loop(session_id)
+
+    def _total_tokens(self, session_id: str) -> int:
+        rows = self.store.conn.execute(
+            "SELECT event FROM ledger WHERE session_id=?", (session_id,)
+        ).fetchall()
+        total = 0
+        for r in rows:
+            try:
+                e = json.loads(r["event"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if e.get("type") == "model_call":
+                total += int(e.get("in_tokens", 0)) + int(e.get("out_tokens", 0))
+        return total
+
+    def _loop(self, session_id: str) -> RunResult:
         start = time.monotonic()
         cycle_history: list[str] = []
         tool_defs = [
@@ -143,6 +179,10 @@ class Kernel:
                 "in_tokens": resp.input_tokens, "out_tokens": resp.output_tokens,
             })
 
+            # ---- budget governor: real adapter token counts --------------
+            if self._total_tokens(session_id) > self.guards.max_total_tokens:
+                return self._stop(session_id, iteration, "budget")
+
             if not resp.tool_calls:
                 self.store.add_message(session_id, "assistant", resp.text)
                 self.store.journal_append(session_id, "FINALIZE", {"iteration": iteration})
@@ -159,15 +199,93 @@ class Kernel:
             if resp.text:
                 self.store.add_message(session_id, "assistant", resp.text)
 
-            # ---- execute tool calls -------------------------------------
-            for call in resp.tool_calls:
-                result_text = self._execute_call(session_id, call)
-                self.store.add_message(
-                    session_id, "tool",
-                    json.dumps({"tool": call.name, "id": call.id, "result": result_text}),
-                )
+            # ---- execute tool calls (may pause for approval) ------------
+            pending = self._execute_pending(session_id, list(resp.tool_calls))
+            if pending is not None:
+                return RunResult(session_id, "", iteration, "awaiting_approval",
+                                 pending_approval=pending)
 
         return self._stop(session_id, self.guards.max_iterations, "max_iterations")
+
+    def _execute_pending(self, session_id: str, calls: list[ToolCall]) -> Optional[str]:
+        """Execute a list of tool calls, honoring HITL approval gates. Returns
+        None when all executed; returns an approval_id (and journals
+        AWAITING_APPROVAL with the remaining calls) when it pauses."""
+        for i, call in enumerate(calls):
+            if self.policy is not None and self.policy.requires_approval(call):
+                aid = _approval_id(session_id, call)
+                rec = self.store.approval_get(aid)
+                if rec is None:
+                    remaining = [
+                        {"id": c.id, "name": c.name, "arguments": c.arguments}
+                        for c in calls[i:]
+                    ]
+                    self.store.journal_append(
+                        session_id, "AWAITING_APPROVAL",
+                        {"approval_id": aid, "tool": call.name,
+                         "args": call.arguments, "pending": remaining},
+                    )
+                    self.ledger.append(session_id, {
+                        "type": "approval_required", "tool": call.name,
+                        "approval_id": aid,
+                        "args_sha256": hashlib.sha256(
+                            json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
+                    })
+                    return aid
+                if rec["status"] == "denied":
+                    self.ledger.append(session_id, {
+                        "type": "approval_denied_exec", "tool": call.name,
+                        "approval_id": aid, "approver": rec["approver"],
+                    })
+                    self._add_tool_msg(
+                        session_id, call,
+                        f"DENIED by approver {rec['approver']}: action not authorized")
+                    continue
+                # approved → record and fall through to execute
+                self.ledger.append(session_id, {
+                    "type": "approval_granted_exec", "tool": call.name,
+                    "approval_id": aid, "approver": rec["approver"],
+                })
+            result_text = self._execute_call(session_id, call)
+            self._add_tool_msg(session_id, call, result_text)
+        return None
+
+    def _add_tool_msg(self, session_id: str, call: ToolCall, result_text: str) -> None:
+        self.store.add_message(
+            session_id, "tool",
+            json.dumps({"tool": call.name, "id": call.id, "result": result_text}),
+        )
+
+    # ----------------------------------------------------- approval gate
+    def approve(self, session_id: str, approval_id: str, approver: str) -> None:
+        """Record an approval, ledgered with approver identity. Bound to the
+        exact approval_id — cannot authorize a different action."""
+        self.store.approval_put(approval_id, session_id, "approved", approver)
+        self.ledger.append(session_id, {
+            "type": "approval", "decision": "approved",
+            "approval_id": approval_id, "approver": approver,
+        })
+
+    def deny(self, session_id: str, approval_id: str, approver: str) -> None:
+        self.store.approval_put(approval_id, session_id, "denied", approver)
+        self.ledger.append(session_id, {
+            "type": "approval", "decision": "denied",
+            "approval_id": approval_id, "approver": approver,
+        })
+
+    def resume(self, session_id: str) -> RunResult:
+        """Resume a run paused at an approval gate. Executes the pending calls
+        honoring approval records, then re-enters the model loop."""
+        tail = self.store.journal_tail(session_id)
+        if tail is None or tail["state"] != "AWAITING_APPROVAL":
+            return RunResult(session_id, "", 0, "resume_noop", pending_approval=None)
+        pending = tail["payload"]["pending"]
+        calls = [ToolCall(c["id"], c["name"], c["arguments"]) for c in pending]
+        still_pending = self._execute_pending(session_id, calls)
+        if still_pending is not None:
+            return RunResult(session_id, "", 0, "awaiting_approval",
+                             pending_approval=still_pending)
+        return self._loop(session_id)
 
     def _execute_call(self, session_id: str, call: ToolCall) -> str:
         # capability check — deny-by-default, denial folded as a tool result

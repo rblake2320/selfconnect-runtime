@@ -58,9 +58,20 @@ Windows equivalents land in Phase 9's CI matrix via TerminateProcess.)
 | `test_tools_native.py` | 10 | `..` traversal + symlink escape denied **before** any spawn; write outside write-roots denied; non-allowlisted host/binary denied; real read/write/list/exec inside the jail; idempotency flags match the design |
 | `test_mcp_host.py` | 7 | Handshake/list/call round-trip; scoped env only; crash-mid-stream → restart → retry succeeds; denied-capability MCP call never sent to the server; idempotent defaults to false; full kernel loop drives an MCP tool under enforcement |
 
+## Phase 3 — Capability kernel completion (+13 tests, 107 cumulative)
+
+| Module | Responsibility |
+|---|---|
+| `scr/policy.py` | YAML policy: `require_approval` rules (by tool + optional arg-regex); admin `tighten` (intersection only) with `PolicyError` on any widening |
+| `scr/kernel.py` (extended) | Journaled `AWAITING_APPROVAL` pause + resumable `resume()`; `approve()`/`deny()` as ledgered events with approver identity; `approval_id` binding each approval to the exact action; token budget governor on real adapter counts |
+
+| Suite | Count | Proves |
+|---|---|---|
+| `test_policy.py` | 6 | Approval matching by tool and by arg-regex; tightening intersects; **widening is rejected**, not silently granted |
+| `test_approval.py` | 7 | Pause without executing; approve→resume runs exactly once; deny→tool never runs; wrong/forged approval_id does not authorize; crash mid-wait recovers to the same gate; approval/denial ledgered with approver; token budget governor stops on real counts |
+
 ## What is NOT yet included
 
-`.scpkg` signing/loading, HITL approval gates, FastAPI surface, installers,
-licensing — Phases 3–8 per the design doc. No gap between claims and code:
-everything listed above is implemented and tested; everything not listed is
-not claimed.
+`.scpkg` signing/loading, FastAPI surface, installers, licensing —
+Phases 4–8 per the design doc. No gap between claims and code: everything
+listed above is implemented and tested; everything not listed is not claimed.

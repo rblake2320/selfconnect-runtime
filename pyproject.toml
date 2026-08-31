@@ -3,7 +3,9 @@ name = "selfconnect-runtime"
 version = "0.2.0"
 description = "SelfConnect Runtime (SCR) — self-hosted journaled agent runtime with deny-by-default capability enforcement and a tamper-evident ledger. PRIVATE, pre-disclosure."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyyaml==6.0.2",
+]
 
 [project.optional-dependencies]
 dev = [

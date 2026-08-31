@@ -7,7 +7,7 @@ Last updated: 2026-08-31.
 |---|---|---|---|
 | 1 | Kernel, recovery, capability core, ledger, gateway, atomic, locks | ✅ complete | 69 (66 pass + 3 POSIX-skip on Windows) |
 | 2 | Sandboxed tool execution + MCP client host | ✅ complete | +25 (94 cumulative; 89 pass + 5 platform-skip on Windows) |
-| 3 | Capability kernel completion | not started | — |
+| 3 | Capability kernel completion | ✅ complete | +13 (107 cumulative; 102 pass + 5 platform-skip on Windows) |
 | 4 | Package format, signing, loader | not started | — |
 | 5 | Ledger completion + evidence export | not started | — |
 | 6 | Service, API, sessions, orchestration | not started | — |
@@ -49,9 +49,31 @@ Last updated: 2026-08-31.
   to close the Windows job-assignment window (ADR-003 — Phase 9 pen review);
   Windows junction-escape twin of the POSIX symlink test (Phase 9 matrix).
 
+## Phase 3 — implemented / tested / deferred
+
+- Implemented + tested: `scr/policy.py` — YAML policy load; `require_approval`
+  rules matching by tool name and by argument regex; admin `tighten`
+  (intersection only) with `PolicyError` on any widening attempt.
+  `scr/kernel.py` extended (Phase 1 loop refactored, not rewritten) with a
+  journaled `AWAITING_APPROVAL` pause storing the remaining pending calls,
+  resumable `resume()`, `approve()`/`deny()` writing ledgered events carrying
+  approver identity, an `approval_id` binding each approval to the exact
+  action (replay-safe), and a token budget governor summing real adapter
+  token counts from the ledger against `Guards.max_total_tokens`.
+- Tested adversarially: approval-required call pauses without executing;
+  approve→resume executes exactly once; deny→resume folds a denial and the
+  tool never runs; a wrong/forged approval_id does not authorize; crash
+  during approval wait (fresh Store over the same DB) recovers to the same
+  gate; approval/denial are ledger events with approver identity and the
+  chain still verifies; token budget governor stops a run on real counts.
+- Deferred (ADR-004): root/exec-rule tightening (Phase 3 tightens tools +
+  net_hosts — enough to prove intersection-only + widening rejection);
+  full root/exec tightening in Phase 9 hardening.
+
 ## Dependencies
 
 - `pytest==8.3.4` (dev) — test runner; industry standard, no runtime footprint.
+- `pyyaml==6.0.2` — policy files are YAML per design §3.3; safe_load only.
 - Phase 2 added **zero** runtime dependencies (stdlib only: subprocess,
   ctypes Job Objects, resource, threading, queue, urllib, json).
 

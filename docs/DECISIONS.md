@@ -36,3 +36,16 @@ controllable in Phase 2 scope: the worker is our own code (`scr.worker`) and
 `proc_exec` only launches operator-allowlisted binaries, so nothing hostile
 runs in that window. Revisit with a CREATE_SUSPENDED spawn path in the
 Phase 9 pen-review of the sandbox.
+
+## ADR-004 — Policy tightening scope: tools + net_hosts in Phase 3 (2026-08-31)
+
+Design §3.3 requires admin policy to tighten a manifest by intersection only,
+never widening. Phase 3 implements tightening for `tools` and `net_hosts`,
+which is sufficient to prove the two behaviors the design and tests demand:
+intersection narrows authority, and any attempt to name a tool/host absent
+from the base manifest is a `PolicyError` (rejected, not silently granted).
+Root and exec-rule tightening follow the identical containment logic already
+present in `capability._roots_contained` / `attenuate`; wiring them through
+the policy layer is deferred to Phase 9 hardening to keep the Phase 3 surface
+small. Recorded as an explicit deferral, not a silent gap. New dependency
+`PyYAML==6.0.2` (safe_load only) because policy files are YAML per the design.
