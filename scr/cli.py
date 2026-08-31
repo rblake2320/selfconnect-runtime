@@ -244,6 +244,20 @@ def cmd_restore(args) -> int:
     return 0
 
 
+def cmd_release_sbom(args) -> int:
+    import json as _json
+
+    from .release import generate_sbom, parse_pinned_deps
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pyproject = args.pyproject or os.path.join(root, "pyproject.toml")
+    deps = parse_pinned_deps(pyproject)
+    sbom = generate_sbom("selfconnect-runtime", __version__, deps)
+    with open(args.out, "w", encoding="utf-8") as f:
+        _json.dump(sbom, f, indent=2, sort_keys=True)
+    print(f"wrote CycloneDX SBOM ({len(sbom['components'])} components) to {args.out}")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     """Design §3.8: DB integrity, disk headroom, installed-package signatures,
     lock health, model count, clock. Prints OK/WARN/FAIL per check; exits
@@ -384,6 +398,12 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("license"); ls.add_argument("--pubkey", required=True)
     ls.add_argument("--now", type=float, default=None)
     ls.set_defaults(func=cmd_license_status)
+
+    rel = sub.add_parser("release")
+    relsub = rel.add_subparsers(dest="relcmd", required=True)
+    rsb = relsub.add_parser("sbom")
+    rsb.add_argument("out"); rsb.add_argument("--pyproject", default=None)
+    rsb.set_defaults(func=cmd_release_sbom)
 
     sub.add_parser("doctor").set_defaults(func=cmd_doctor)
     return p

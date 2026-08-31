@@ -173,6 +173,16 @@ currently-unproven claim.
   key present + load-bearing (tamper fails); ciphertext tamper fails; explicit
   mode still works incl. wrong-key rejection. Existing explicit-key backup
   tests unchanged. Closes C10.
+- **C15 — SBOM + signed release artifacts (§8, DoD).** `scr/release.py`:
+  `parse_pinned_deps` reads the real pinned versions from pyproject; a
+  CycloneDX 1.5 SBOM is generated with PURLs for every component (`scr release
+  sbom <out>`; committed `sbom.json` has 7 components). Ed25519 detached
+  artifact signing over the file's SHA-256 with the publisher key +
+  fail-closed `verify_artifact` (digest match, signature, key pinning).
+  `tests/test_release.py` (+6): SBOM valid + reflects real deps; sign/verify
+  round-trip; tampered artifact, untrusted key, forged signature all rejected.
+  Authenticode signing of the MSI is layered on later with the code-signing
+  cert. Closes C15 (MSI Authenticode pending the cert).
 
 ## Content migration (SelfConnect → `.scpkg`)
 

@@ -1,0 +1,64 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "bom-ref": "pkg:pypi/cryptography@50.0.1",
+      "name": "cryptography",
+      "purl": "pkg:pypi/cryptography@50.0.1",
+      "type": "library",
+      "version": "50.0.1"
+    },
+    {
+      "bom-ref": "pkg:pypi/fastapi@0.115.6",
+      "name": "fastapi",
+      "purl": "pkg:pypi/fastapi@0.115.6",
+      "type": "library",
+      "version": "0.115.6"
+    },
+    {
+      "bom-ref": "pkg:pypi/httpx@0.28.1",
+      "name": "httpx",
+      "purl": "pkg:pypi/httpx@0.28.1",
+      "type": "library",
+      "version": "0.28.1"
+    },
+    {
+      "bom-ref": "pkg:pypi/pytest@8.3.4",
+      "name": "pytest",
+      "purl": "pkg:pypi/pytest@8.3.4",
+      "type": "library",
+      "version": "8.3.4"
+    },
+    {
+      "bom-ref": "pkg:pypi/pyyaml@6.0.2",
+      "name": "pyyaml",
+      "purl": "pkg:pypi/pyyaml@6.0.2",
+      "type": "library",
+      "version": "6.0.2"
+    },
+    {
+      "bom-ref": "pkg:pypi/uvicorn@0.34.0",
+      "name": "uvicorn",
+      "purl": "pkg:pypi/uvicorn@0.34.0",
+      "type": "library",
+      "version": "0.34.0"
+    },
+    {
+      "bom-ref": "pkg:pypi/websockets@14.1",
+      "name": "websockets",
+      "purl": "pkg:pypi/websockets@14.1",
+      "type": "library",
+      "version": "14.1"
+    }
+  ],
+  "metadata": {
+    "component": {
+      "name": "selfconnect-runtime",
+      "purl": "pkg:pypi/selfconnect-runtime@0.2.0",
+      "type": "application",
+      "version": "0.2.0"
+    }
+  },
+  "specVersion": "1.5",
+  "version": 1
+}
