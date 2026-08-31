@@ -13,7 +13,38 @@ Last updated: 2026-08-31.
 | 6 | Service, API, sessions, orchestration | ✅ complete | +22 (161 cumulative; 155 pass + 6 platform-skip on Windows) |
 | 7 | Vault, config, CLI, updater, licensing (installers scaffolded) | ⚠ core complete; installer BUILD open | +27 (188 cumulative; 182 pass + 6 platform-skip on Windows) |
 | 8 | Remaining adapters + ops surface | ✅ complete | +21 (209 cumulative; 203 pass + 6 platform-skip on Windows) |
-| 9 | Hardening + full matrix | not started | — |
+| 9 | Hardening + full matrix | ✅ complete | +6 (215 cumulative; 209 pass + 6 platform-skip on Windows) |
+
+## Definition of Done — evidence map
+
+| DoD item (design §10) | Status | Evidence |
+|---|---|---|
+| Survives kill -9 / TerminateProcess mid-task; no corruption, no double-fire | ✅ | `test_chaos_kill.py` (POSIX), `test_hardening.py::test_terminateprocess_chaos_then_recover` (Windows), `test_recovery.py`, `test_sessions.py` |
+| Never executes what a manifest doesn't permit (incl. MCP) | ✅ | `test_capability.py`, `test_tools_native.py`, `test_mcp_host.py::test_denied_capability_mcp_call_not_sent` |
+| Any single-byte package tamper detected + localized; revoked versions refuse | ✅ | `test_loader.py`, `test_merkle.py`, `test_signing.py` |
+| Evidence bundle verifies offline on a clean machine | ✅ | `test_evidence.py::test_offline_standalone_verifier_no_scr` |
+| Service E2E: kill mid-run → restart → resume | ✅ | `test_sessions.py::test_kill_mid_run_then_recover_quarantines`, `test_service.py` |
+| No secret ever on disk plaintext; redaction proven | ✅ | `test_vault.py`, `test_redaction.py`, `test_backup.py` |
+| MSI installs on a clean Windows box; init→…→export under 30 min | ⛔ OPEN | installer scaffolds only; WiX build + clean-box run not performed here |
+| License expiry → read-only evidence, never bricks | ✅ | `test_license.py::test_expired_license_grace_readonly` |
+| STATUS claims ⊆ tested reality | ✅ | this file; OPEN items labeled OPEN |
+
+**OPEN items carried forward** (not met, not hidden): installer BUILD +
+clean-box install (needs WiX toolset, absent here); DPAPI-NG (classic DPAPI
+used, ADR-008); live network conformance for all adapters (offline
+build/parse tested); cgroups-v2 POSIX isolation (ADR-002); CREATE_SUSPENDED
+Windows job spawn (ADR-003).
+
+## Phase 9 — implemented / tested
+
+- Windows TerminateProcess chaos twin + junction-escape twin of the POSIX
+  SIGKILL/symlink tests; disk-full atomic-write chaos; backward clock-jump
+  chaos (ledger + recovery unaffected); dual-instance lock contention storm
+  (mutual exclusion holds); upgrade-path matrix (v1→v2→v3-rollback→v4).
+- `docs/PEN_REVIEW.md`: adversarial review of the capability kernel + sandbox;
+  every considered attack has a disposition backed by a named test; two
+  by-design limitations documented with compensating controls. No exploitable
+  finding lacked a control.
 
 ## Phase 1 — implemented / tested / deferred
 

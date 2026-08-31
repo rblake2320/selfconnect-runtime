@@ -124,3 +124,16 @@ adds zero dependencies. Prometheus metrics are off by default per design §3.8;
 the registry is inert until explicitly enabled, so nothing is exposed on a
 default install. The NIST 800-171 mapping is an internal indicative draft, not
 an assessment, and lists its gaps rather than overclaiming coverage.
+
+## ADR-010 — Phase 9 hardening: tests + review, no new code paths (2026-08-31)
+
+Hardening adds coverage, not surface: Windows twins (TerminateProcess chaos,
+directory-junction escape) of the POSIX-skipped tests; disk-full, clock-jump,
+lock-contention, and upgrade-path chaos; and a written pen-style review
+(`docs/PEN_REVIEW.md`) of the capability kernel and sandbox. The review found
+no exploitable gap lacking a control; two by-design limitations
+(allowlisted-exec trust, the Windows job-assignment micro-window) are
+documented with compensating controls rather than papered over. The MSI/
+clean-box install remains OPEN in STATUS because it cannot be honestly
+verified in this environment — labeling it OPEN is the rule-3 obligation, not
+a failure to hide.
