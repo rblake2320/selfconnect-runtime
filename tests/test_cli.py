@@ -93,4 +93,4 @@ def test_doctor(tmp_path, capsys):
     rc = main(["--home", str(tmp_path), "doctor"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "integrity: ok" in out
+    assert "db_integrity" in out and "OK" in out

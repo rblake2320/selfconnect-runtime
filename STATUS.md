@@ -40,9 +40,13 @@ Last updated: 2026-08-31.
     install→run→export→verify. Offline via stub; **live via `SCR_OLLAMA_URL`**
     (this is also the Ollama closure harness). `docs/CLEAN_BOX_TEST.md` carries
     the manual VM + MSI-build steps.
-  - Coverage: §3.2 shared conformance corpus (`tests/test_conformance.py`, +11)
-    and the newline-injected-exec-arg denial (capability regression, +1).
-  - Suite now **244 tests (238 pass + 6 skip)**, up from 230.
+  - **C17 — full `scr doctor`** (design §3.8): DB integrity, disk headroom,
+    installed-package tamper detection (self-consistent signature), lock
+    health, models, clock; exits non-zero on any FAIL. `tests/test_doctor.py`.
+  - Coverage: §3.2 shared conformance corpus (`tests/test_conformance.py`, +11),
+    the newline-injected-exec-arg denial (capability regression, +1), and
+    OllamaAdapter server-error surfacing (+1, exposed by the live run).
+  - Suite now **247 tests (241 pass + 6 skip)**, up from 230.
 - **Still OPEN (owner-side inputs / environment):**
   - **MSI build + clean-box step 1** — WiX/dotnet not usable here (`wix`
     absent, `dotnet --version` errors). Steps 2–6 automated; step 1 manual

@@ -12,7 +12,14 @@ Two things the original makes authoritative that the reconstruction lacked:
    tests-per-claim justification rule applies — meet the target with real
    adversarial tests OR justify why fewer fully cover the claim).
 
-Legend: **[MISSING]** · **[PARTIAL]** · **[UNTESTED]** · **[DIVERGENT]** · **OK**.
+Legend: **[MISSING]** · **[PARTIAL]** · **[UNTESTED]** · **[DIVERGENT]** · **OK** · **[CLOSED]** (done since this reconciliation).
+
+**Closed since reconciliation (2026-08-31):** G3 verify-at-execution (C4),
+G5 real process-tree cancel (C5), G1 CLI verbs (C19), §5 install-story E2E
+(offline + **live gemma3 on the DGX Spark**), G2 live-Ollama proof + package
+self-tests, shared conformance corpus, newline-exec capability regression,
+`scr doctor` full check set (C17), OllamaAdapter server-error surfacing.
+Suite 230 → **247**. Remaining below stay OPEN and are sequenced by goal impact.
 
 ---
 

@@ -243,16 +243,74 @@ def cmd_restore(args) -> int:
 
 
 def cmd_doctor(args) -> int:
-    cfg = Config(args.home)
+    """Design §3.8: DB integrity, disk headroom, installed-package signatures,
+    lock health, model count, clock. Prints OK/WARN/FAIL per check; exits
+    non-zero if any check FAILs."""
+    import datetime
+    import shutil
+
+    from .registry import PackageRegistry
+    from .signing import Keystore
     from .state import Store
-    store = Store(_store_path(cfg.home))
-    integrity = store.conn.execute("PRAGMA integrity_check;").fetchone()[0]
+
+    cfg = Config(args.home)
+    checks: list[tuple[str, str, str]] = []   # (name, status, detail)
+
     print(f"SCR {__version__}")
-    print(f"home:      {cfg.home}")
-    print(f"db:        {_store_path(cfg.home)}")
-    print(f"integrity: {integrity}")
-    print(f"models:    {len(cfg.models())} configured")
-    return 0 if integrity == "ok" else 1
+    print(f"home: {cfg.home}")
+
+    # DB integrity
+    try:
+        store = Store(_store_path(cfg.home))
+        integ = store.conn.execute("PRAGMA integrity_check;").fetchone()[0]
+        checks.append(("db_integrity", "OK" if integ == "ok" else "FAIL", integ))
+    except Exception as e:  # noqa: BLE001
+        checks.append(("db_integrity", "FAIL", str(e)[:120]))
+
+    # Disk headroom
+    try:
+        du = shutil.disk_usage(cfg.home)
+        free_gb = du.free / (1024 ** 3)
+        checks.append(("disk_headroom",
+                       "OK" if free_gb >= 1.0 else "WARN",
+                       f"{free_gb:.1f} GiB free"))
+    except Exception as e:  # noqa: BLE001
+        checks.append(("disk_headroom", "WARN", str(e)[:120]))
+
+    # Installed-package integrity (tamper detection, self-consistent signature)
+    reg = PackageRegistry(cfg.home, Keystore())
+    from .loader import integrity_check
+    installed = reg.list_installed()
+    if not installed:
+        checks.append(("packages", "OK", "none installed"))
+    for p in installed:
+        res = integrity_check(p.path)
+        checks.append((f"pkg:{p.name}",
+                       "OK" if res.ok else "FAIL",
+                       f"{p.version} " + ("intact" if res.ok else f"{res.error}: {res.detail}")))
+
+    # Lock health (best-effort: is the workspace lock currently free?)
+    from .locks import LockHeld, WorkspaceLock
+    lock_path = os.path.join(cfg.home, "workspace.lock")
+    try:
+        wl = WorkspaceLock(lock_path)
+        wl.acquire()
+        wl.release()
+        checks.append(("lock_health", "OK", "workspace lock free"))
+    except LockHeld:
+        checks.append(("lock_health", "WARN", "held by another instance"))
+    except Exception as e:  # noqa: BLE001
+        checks.append(("lock_health", "WARN", str(e)[:120]))
+
+    # Models + clock
+    checks.append(("models", "OK", f"{len(cfg.models())} configured"))
+    checks.append(("clock", "OK",
+                   datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")))
+
+    width = max(len(n) for n, _, _ in checks)
+    for name, status, detail in checks:
+        print(f"  [{status:>4}] {name:<{width}}  {detail}")
+    return 0 if all(s != "FAIL" for _, s, _ in checks) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
