@@ -163,6 +163,16 @@ currently-unproven claim.
   (Linux); the capability kernel is the enforced read/write jail today. Also
   fixed the `GetCurrentProcess`/`GetTokenInformation` ctypes restype pitfalls
   (researched, same class as the boot_id fix). Closes C11 (with C11b residual).
+- **C10 — DPAPI-wrapped backup key (§3.5).** `backup.py` default mode now
+  generates a random AES-256 key per backup and WRAPS it with DPAPI (reusing
+  the vault primitives); only the wrapped blob is stored in the archive
+  (format `SCRBAK02`), so the key is never on disk in plaintext and only the
+  same user/machine can unwrap. An explicit-key mode remains for air-gapped
+  cross-machine restore. CLI `--key` is now optional (DPAPI by default).
+  `tests/test_backup_dpapi.py` (+4): wrapped round-trip with no key; wrapped
+  key present + load-bearing (tamper fails); ciphertext tamper fails; explicit
+  mode still works incl. wrong-key rejection. Existing explicit-key backup
+  tests unchanged. Closes C10.
 
 ## Content migration (SelfConnect → `.scpkg`)
 

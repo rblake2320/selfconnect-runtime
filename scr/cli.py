@@ -229,15 +229,17 @@ def cmd_model_test(args) -> int:
 def cmd_backup(args) -> int:
     from .backup import create_backup
     cfg = Config(args.home)
-    create_backup(cfg.home, bytes.fromhex(args.key), args.out)
-    print(f"backup written to {args.out}")
+    key = bytes.fromhex(args.key) if args.key else None   # None → DPAPI-wrapped
+    create_backup(cfg.home, key, args.out)
+    print(f"backup written to {args.out}" + ("" if key else " (DPAPI-wrapped key)"))
     return 0
 
 
 def cmd_restore(args) -> int:
     from .backup import restore_backup
     cfg = Config(args.home)
-    restore_backup(args.archive, bytes.fromhex(args.key), cfg.home)
+    key = bytes.fromhex(args.key) if args.key else None
+    restore_backup(args.archive, key, cfg.home)
     print(f"restored into {cfg.home}")
     return 0
 
@@ -360,10 +362,11 @@ def build_parser() -> argparse.ArgumentParser:
     sx.set_defaults(func=cmd_session_export)
 
     bk = sub.add_parser("backup")
-    bk.add_argument("out"); bk.add_argument("--key", required=True)
+    bk.add_argument("out"); bk.add_argument("--key", default=None,
+                    help="explicit 32-byte hex key (omit for DPAPI-wrapped)")
     bk.set_defaults(func=cmd_backup)
     rs = sub.add_parser("restore")
-    rs.add_argument("archive"); rs.add_argument("--key", required=True)
+    rs.add_argument("archive"); rs.add_argument("--key", default=None)
     rs.set_defaults(func=cmd_restore)
 
     lg = sub.add_parser("ledger")
