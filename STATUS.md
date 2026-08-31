@@ -205,6 +205,19 @@ currently-unproven claim.
   (+4): replay reproduces an identical ledger chain; divergent model output
   yields a different head; replay matches a recorded session and a tampered
   script does not; same-session-id required. Closes C3.
+- **C16 — Named-pipe transport (§3.7).** `scr/pipe_transport.py` (Windows-only,
+  ctypes, no new deps): a real `\\.\pipe\<name>` request/response transport
+  (byte mode, newline-framed JSON) — `NamedPipeServer(name, handler)` with
+  `serve_one`/`serve_forever`/`start`/`stop`, and `pipe_client_request`.
+  `tests/test_pipe_transport.py` (+4, real round-trips): echo; version
+  dispatch; handler exception → structured error; serve_forever handles
+  multiple sequential requests. POSIX equivalent is uvicorn's UDS. Owner-only
+  SD noted as the multi-user hardening. Closes C16.
+
+**Tail complete:** every §C divergence (C1–C20) is now closed or explicitly
+residual (C11b OS-level read isolation → AppContainer/Landlock). The only
+remaining DoD gap is the **MSI build + clean-box step 1**, blocked on the
+WiX/dotnet toolchain (owner-side).
 
 ## Content migration (SelfConnect → `.scpkg`)
 

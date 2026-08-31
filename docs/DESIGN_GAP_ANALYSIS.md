@@ -28,12 +28,18 @@ restype fix), **P0.3** parallel-safe tool exec (C1, real concurrent HTTP),
 summarization-on-overflow (C2), **P2.6** seat enforcement (C14) + /metrics
 off-by-default (C18) + log rotation (C20). Suite 230 → **285**.
 
-**Still OPEN** (lower-priority tail + toolchain-blocked): C3 deterministic
-replay, C6 manifest semver/deps/min-runtime + hot reload, C10 backup key
-DPAPI-wrapped, C11 restricted token / seccomp, C13 package shadow-install
-updates, C15 SBOM/reproducible/signed artifacts, C16 named-pipe transport;
-and the MSI build + clean-box step 1 (blocked on the WiX/dotnet toolchain,
-owner-side).
+**Tail now CLOSED** (goal-impact order): C11 worker privilege reduction
+(privilege-drop; OS read-isolation → AppContainer residual C11b), C10 DPAPI-
+wrapped backup key, C15 SBOM + signed release artifacts, C13 package
+shadow-install updates, C6 manifest semver/deps/min-runtime + hot-reload,
+C3 deterministic replay, C16 named-pipe transport. Suite → **318**.
+
+**Still OPEN** (only these): the MSI build + clean-box step 1 (blocked on the
+WiX/dotnet toolchain, owner-side); C11b OS-level read isolation (AppContainer/
+Landlock — documented residual, capability kernel is the enforced read jail);
+Authenticode signing of the MSI (pending the code-signing cert); reproducible-
+build attestation (SBOM + artifact signing shipped; bit-reproducibility is a
+build-infra task).
 
 ---
 
