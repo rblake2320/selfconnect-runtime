@@ -60,7 +60,8 @@ class Config:
 
     def add_model(self, name: str, adapter: str, model: str,
                   base_url: str = "", secret_ref: str = "",
-                  timeout: Optional[float] = None) -> None:
+                  timeout: Optional[float] = None,
+                  num_ctx: Optional[int] = None) -> None:
         """Record a model endpoint. secret_ref names a vault entry; the secret
         itself is NEVER stored here."""
         models = dict(self._data.get("models", {}))
@@ -68,6 +69,8 @@ class Config:
                         "base_url": base_url, "secret_ref": secret_ref}
         if timeout is not None:
             models[name]["timeout"] = float(timeout)
+        if num_ctx is not None:
+            models[name]["num_ctx"] = int(num_ctx)
         self._data["models"] = models
         if self._data.get("default_model") is None:
             self._data["default_model"] = name

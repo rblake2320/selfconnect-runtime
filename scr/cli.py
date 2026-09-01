@@ -40,7 +40,7 @@ def cmd_model_add(args) -> int:
         Vault(cfg.home).store_secret(secret_ref, args.secret)
     cfg.add_model(args.name, args.adapter, args.model,
                   base_url=args.base_url or "", secret_ref=secret_ref,
-                  timeout=args.timeout)
+                  timeout=args.timeout, num_ctx=args.num_ctx)
     cfg.save()
     print(f"added model {args.name!r} (adapter={args.adapter}, secret_ref={secret_ref or 'none'})")
     return 0
@@ -448,6 +448,9 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--secret", default=None)
     ma.add_argument("--timeout", type=float, default=None,
                     help="per-call timeout seconds (default 600; raise for slow local reasoning models)")
+    ma.add_argument("--num-ctx", dest="num_ctx", type=int, default=None,
+                    help="context window tokens for local models (default 16384; "
+                         "Ollama's own ~4k default silently truncates prompts)")
     ma.set_defaults(func=cmd_model_add)
     msub.add_parser("list").set_defaults(func=cmd_model_list)
 

@@ -280,7 +280,7 @@ class TeamRunner:
         team_id = team_id or uuid.uuid4().hex
         if depth == 0:
             self.last_team_id = team_id
-            self.on_event(f"▶ team run: {entry_name} (orchestrator {entry})")
+            self.on_event(f"> team run: {entry_name} (orchestrator {entry})")
         eff = self.loaded.team.effective_manifest(entry)   # raises if severed/deep
         sid = self.store.create_session()
         self.store.team_session_add(team_id, sid, entry, parent_session, depth)
@@ -376,7 +376,7 @@ class TeamRunner:
             if no_redelegate and task_key in state["denied"]:
                 _policy(child, "no_redelegate_after_denial", "denied",
                         "child previously failed this exact task (all tool calls denied)")
-                self.on_event(f"  ⨯ policy: {child} not re-delegated (prior all-denied)")
+                self.on_event(f"  x policy: {child} not re-delegated (prior all-denied)")
                 return (f"DENIED by policy: {child!r} already ran this task and every "
                         f"tool call was denied; retrying will not help. Adjust the task "
                         f"or the capability grant, or proceed without it.")
@@ -384,7 +384,7 @@ class TeamRunner:
             if max_per is not None and state["count"].get(child, 0) >= int(max_per):
                 _policy(child, "max_delegations_per_child", "denied",
                         f"max {max_per} delegations to {child} reached")
-                self.on_event(f"  ⨯ policy: max delegations to {child} reached")
+                self.on_event(f"  x policy: max delegations to {child} reached")
                 return f"DENIED by policy: max {max_per} delegations to {child!r} reached"
             try:
                 eff = self.loaded.team.effective_manifest(child)
@@ -396,7 +396,7 @@ class TeamRunner:
             led.append(parent_session, {"type": "delegate", "parent": parent,
                                         "child": child, "team_id": team_id,
                                         "eff_cap_sha256": _eff_hash(eff), "depth": depth + 1})
-            self.on_event(f"  → {parent} delegates to {child}: {subtask[:70]}")
+            self.on_event(f"  -> {parent} delegates to {child}: {subtask[:70]}")
             self._deliver(led, mb, parent_session, parent, child, subtask, "task")
             child_result = self.run(child, subtask, team_id, parent_session, depth + 1)
             text = child_result.final_text
@@ -405,7 +405,7 @@ class TeamRunner:
                 state["denied"].add(task_key)
                 _policy(child, "no_redelegate_after_denial", "marked_denied",
                         "child run ended with all tool calls denied")
-                self.on_event(f"  ⚠ {child} run was all-denied (fs/tool access)")
+                self.on_event(f"  ! {child} run was all-denied (fs/tool access)")
             elif need_nonempty and not text.strip():
                 # RUN-B live finding: a child returned 0 chars yet satisfied
                 # required_children — a model can complete a requirement
@@ -413,11 +413,11 @@ class TeamRunner:
                 # is enforceable: don't count it, and say so in the ledger.
                 _policy(child, "require_nonempty_result", "not_counted",
                         "child completed but returned an empty result")
-                self.on_event(f"  ⚠ {child} returned empty — not counted as completed")
+                self.on_event(f"  ! {child} returned empty - not counted as completed")
             else:
                 state["completed"].add(child)
                 _policy(child, "required_children", "completed", "child completed")
-            self.on_event(f"  ← {child} returned ({len(text)} chars)")
+            self.on_event(f"  <- {child} returned ({len(text)} chars)")
             self._deliver(led, mb, parent_session, child, parent, text, "result")
             return text
 

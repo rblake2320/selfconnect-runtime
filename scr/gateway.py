@@ -132,10 +132,18 @@ class OllamaAdapter:
     """Local models — fully offline path. No credential required."""
 
     def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "llama3.1",
-                 timeout: float = 600.0):   # local reasoning models can think a long time
+                 timeout: float = 600.0,    # local reasoning models can think a long time
+                 num_ctx: int = 16384):
+        # num_ctx MUST be explicit: Ollama's runtime default (~4k) silently
+        # truncates the prompt from the top (system prompt first) and caps
+        # generation — a 262k-capable qwen3.6 was strangled to 4k in live RUN
+        # A-C, cutting the researcher off MID-THINKING (empty content, no tool
+        # calls). Silent truncation is the same failure class as a mangled
+        # workspace: the run proceeds against nothing.
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.num_ctx = int(num_ctx)
 
     def build_request(
         self, messages: list[dict[str, str]], tools: list[ToolDef]
@@ -146,6 +154,7 @@ class OllamaAdapter:
             "model": self.model,
             "messages": messages,
             "stream": False,
+            "options": {"num_ctx": self.num_ctx},
         }
         if tools:
             body["tools"] = [

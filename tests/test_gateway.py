@@ -124,3 +124,24 @@ def test_ollama_surfaces_server_error():
     a = OllamaAdapter("http://x", "m")
     with pytest.raises(RuntimeError, match="ollama error"):
         a.parse_response({"error": "model failed to load"})
+
+
+def test_ollama_num_ctx_explicit_in_request():
+    """RUN A-C live finding: Ollama's ~4k runtime default silently truncated
+    the prompt and cut a 262k-capable reasoning model off MID-THINKING (empty
+    content, no tool calls). The adapter must always send num_ctx explicitly."""
+    a = OllamaAdapter("http://h:11434", "qwen3.6:27b")
+    _, _, body = a.build_request(MSGS, TOOLS)
+    assert body["options"]["num_ctx"] == 16384          # explicit default
+    a2 = OllamaAdapter("http://h:11434", "qwen3.6:27b", num_ctx=32768)
+    _, _, body2 = a2.build_request(MSGS, [])
+    assert body2["options"]["num_ctx"] == 32768
+
+
+def test_model_factory_passes_num_ctx():
+    from scr.model_factory import build_adapter
+    ad = build_adapter({"adapter": "ollama", "model": "m",
+                        "num_ctx": 32768}, None)
+    assert ad.num_ctx == 32768
+    ad2 = build_adapter({"adapter": "ollama", "model": "m"}, None)
+    assert ad2.num_ctx == 16384
