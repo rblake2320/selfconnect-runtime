@@ -178,6 +178,8 @@ def _adapter_from_config(cfg, args):
 def _run_team(cfg, args, target: str, task: str) -> int:
     """Team/agent run: load the topology from the installed package that
     provides `target` and execute it through the runtime."""
+    import sys as _sys
+
     from .capability import CapabilityManifest
     from .registry import PackageRegistry
     from .sandbox import SandboxRunner
@@ -185,6 +187,12 @@ def _run_team(cfg, args, target: str, task: str) -> int:
     from .state import Store
     from .team import TeamLoadError, TeamRunner, load_team_from_package
     from .tools_native import build_native_tools
+
+    # ${WORKSPACE} in agent capability roots binds here. Default: SCR home;
+    # pass --workspace <path> to point the team at a real target (e.g. a repo).
+    workspace = getattr(args, "workspace", None) or cfg.home
+    workspace = os.path.abspath(workspace)
+    os.makedirs(os.path.join(workspace, "out"), exist_ok=True)
 
     reg = PackageRegistry(cfg.home, Keystore())
     adapter = _adapter_from_config(cfg, args)
@@ -195,7 +203,7 @@ def _run_team(cfg, args, target: str, task: str) -> int:
     available: dict[str, list[str]] = {}
     for pkg in reg.list_installed():
         try:
-            lt = load_team_from_package(pkg.path, cfg.home)
+            lt = load_team_from_package(pkg.path, workspace)
         except TeamLoadError:
             continue
         available[pkg.name] = sorted(lt.specs) + [f"team:{a}" for a in lt.aliases]
@@ -206,8 +214,13 @@ def _run_team(cfg, args, target: str, task: str) -> int:
         listing = "; ".join(f"{p}: {v}" for p, v in available.items()) or "(none installed)"
         raise SystemExit(f"unknown team/agent {target!r}. Available — {listing}")
 
+    def progress(msg):
+        print(msg, file=_sys.stderr, flush=True)
+
     trunner = TeamRunner(store, loaded, lambda a: adapter,
-                         lambda m: build_native_tools(m, runner_sb))
+                         lambda m: build_native_tools(m, runner_sb),
+                         sandbox=runner_sb, on_event=progress)
+    print(f"workspace: {workspace}", file=_sys.stderr, flush=True)
     result = trunner.run(target, task)
     print(f"team {target} [{result.stopped_reason}] session {result.session_id} "
           f"(team {trunner.last_team_id})")
@@ -433,6 +446,8 @@ def build_parser() -> argparse.ArgumentParser:
     rn.add_argument("target_and_task", nargs="+",
                     help='either "<task>" (single agent) or <team-or-agent> "<task>"')
     rn.add_argument("--model", default=None)
+    rn.add_argument("--workspace", default=None,
+                    help="bind ${WORKSPACE} in agent capability roots to this path")
     rn.add_argument("--idem", default=None)
     rn.set_defaults(func=cmd_run)
 

@@ -212,7 +212,7 @@ def _eff_hash(m: CapabilityManifest) -> str:
 class TeamRunner:
     def __init__(self, store: Store, loaded: LoadedTeam,
                  adapter_factory: AdapterFactory, tools_factory: ToolsFactory,
-                 policy=None, max_depth: int = 4, sandbox=None):
+                 policy=None, max_depth: int = 4, sandbox=None, on_event=None):
         self.store = store
         self.loaded = loaded
         self.adapter_factory = adapter_factory
@@ -220,6 +220,7 @@ class TeamRunner:
         self.policy = policy
         self.max_depth = max_depth
         self.sandbox = sandbox                 # shared SandboxRunner (for cancel)
+        self.on_event = on_event or (lambda msg: None)   # progress callback
         self.sessions: dict[str, str] = {}     # agent -> its session (last run)
         self.last_team_id: Optional[str] = None
         self._cancel = threading.Event()
@@ -240,6 +241,7 @@ class TeamRunner:
         team_id = team_id or uuid.uuid4().hex
         if depth == 0:
             self.last_team_id = team_id
+            self.on_event(f"▶ team run: {entry_name} (orchestrator {entry})")
         eff = self.loaded.team.effective_manifest(entry)   # raises if severed/deep
         sid = self.store.create_session()
         self.store.team_session_add(team_id, sid, entry, parent_session, depth)
@@ -290,9 +292,11 @@ class TeamRunner:
             led.append(parent_session, {"type": "delegate", "parent": parent,
                                         "child": child, "team_id": team_id,
                                         "eff_cap_sha256": _eff_hash(eff), "depth": depth + 1})
+            self.on_event(f"  → {parent} delegates to {child}: {subtask[:70]}")
             self._deliver(led, mb, parent_session, parent, child, subtask, "task")
             child_result = self.run(child, subtask, team_id, parent_session, depth + 1)
             text = child_result.final_text
+            self.on_event(f"  ← {child} returned ({len(text)} chars)")
             self._deliver(led, mb, parent_session, child, parent, text, "result")
             return text
 
