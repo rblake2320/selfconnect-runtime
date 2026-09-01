@@ -255,3 +255,73 @@ def test_vault_name_sanitization_defeats_traversal(tmp_path):
         p = os.path.abspath(v._path(name))
         assert os.path.commonpath([p, os.path.abspath(v.dir)]) == \
             os.path.abspath(v.dir), f"escaped vault: {name!r} -> {p}"
+
+
+# ---------------- class sweep: everywhere model output meets runtime code
+def test_adapter_exception_stops_gracefully_not_crash():
+    """Same class as RUN-E's P0, other direction: a TimeoutError (or any
+    adapter I/O failure) mid-run must journal a graceful stop, never
+    stack-trace the process (RUN A attempt 1 crashed exactly this way)."""
+    from scr.capability import CapabilityManifest
+    from scr.kernel import Kernel
+
+    class _DyingAdapter:
+        def complete(self, messages, tools):
+            raise TimeoutError("model took too long")
+
+    store = Store(":memory:")
+    k = Kernel(store, _DyingAdapter(), {}, CapabilityManifest())
+    sid = store.create_session()
+    res = k.run(sid, "go")                       # must NOT raise
+    assert res.stopped_reason == "model_error"
+    ev = [json.loads(r["event"]) for r in store.conn.execute(
+        "SELECT event FROM ledger WHERE session_id=? ORDER BY seq", (sid,))]
+    me = [e for e in ev if e.get("type") == "model_error"]
+    assert me and me[0]["class"] == "TimeoutError"
+
+
+def test_malformed_tool_arguments_json_folds_to_empty():
+    # OpenAI-compat: the arguments string is MODEL-CONTROLLED; malformed JSON
+    # folds to {} so the tool's bad_args validation corrects the model.
+    from scr.gateway import OpenAICompatAdapter
+    a = OpenAICompatAdapter("http://h/v1", "k", "m")
+    payload = {"choices": [{"message": {
+        "content": "",
+        "tool_calls": [
+            {"id": "1", "function": {"name": "fs_read",
+                                     "arguments": "{not json!!"}},
+            {"id": "2", "function": {"name": "fs_read",
+                                     "arguments": "[1,2,3]"}},   # non-dict
+            {"id": "3", "function": {"name": "fs_read",
+                                     "arguments": "{\"path\": \"x\"}"}},
+        ]}}]}
+    resp = a.parse_response(payload)
+    assert [c.arguments for c in resp.tool_calls] == [{}, {}, {"path": "x"}]
+
+
+def test_child_abnormal_stop_yields_explanatory_text(tmp_path):
+    # a child that stops without a result must hand the parent an explanation,
+    # not None (which crashed the delegate tool's len() before the fold).
+    class _Dying:
+        def complete(self, messages, tools):
+            raise TimeoutError("down")
+
+    agents = {"lead": {"capabilities": CAPS, "delegates": ["worker"]},
+              "worker": {"capabilities": CAPS}}
+    loaded = load_team_from_dir(_write(tmp_path, agents), str(tmp_path / "ws"))
+    store = Store(":memory:")
+    lead_adapter = MockAdapter([
+        ModelResponse("", (ToolCall("c", "delegate",
+                       {"agent": "worker", "task": "t"}),)),
+        ModelResponse("reported the failure honestly"),
+    ])
+    adapters = {"lead": lead_adapter, "worker": _Dying()}
+    runner = TeamRunner(store, loaded, lambda a: adapters[a], lambda m: {})
+    res = runner.run("lead", "go")
+    assert res.stopped_reason == "completed"          # parent survived
+    assert res.final_text.startswith("reported the failure honestly")
+    # the parent SAW the explanation via the mailbox delivery
+    row = store.conn.execute(
+        "SELECT content FROM messages WHERE role='tool' AND content LIKE ?",
+        ('%CHILD STOPPED [model_error]%',)).fetchone()
+    assert row is not None

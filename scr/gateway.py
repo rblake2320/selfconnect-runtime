@@ -49,7 +49,7 @@ class MockAdapter:
     """Scripted adapter for deterministic kernel tests. Optionally raises
     at a scripted step to simulate a crash mid-model-call."""
 
-    def __init__(self, script: list[ModelResponse | Exception]):
+    def __init__(self, script: list[ModelResponse | BaseException]):
         self.script = list(script)
         self.calls: list[list[dict[str, str]]] = []
 
@@ -58,7 +58,7 @@ class MockAdapter:
         if not self.script:
             raise RuntimeError("MockAdapter script exhausted")
         step = self.script.pop(0)
-        if isinstance(step, Exception):
+        if isinstance(step, BaseException):
             raise step
         return step
 
@@ -103,11 +103,21 @@ class OpenAICompatAdapter:
         choice = payload["choices"][0]["message"]
         calls = []
         for tc in choice.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            try:
+                arguments = json.loads(fn.get("arguments") or "{}")
+                if not isinstance(arguments, dict):
+                    arguments = {}
+            except (json.JSONDecodeError, TypeError):
+                # Model-controlled string (same class as RUN-E's P0): malformed
+                # argument JSON folds to {} — the tool's bad_args validation
+                # then gives the model corrective feedback instead of a crash.
+                arguments = {}
             calls.append(
                 ToolCall(
-                    id=tc["id"],
-                    name=tc["function"]["name"],
-                    arguments=json.loads(tc["function"]["arguments"] or "{}"),
+                    id=tc.get("id", ""),
+                    name=fn.get("name", ""),
+                    arguments=arguments,
                 )
             )
         usage = payload.get("usage") or {}

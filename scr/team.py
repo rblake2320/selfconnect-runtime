@@ -479,6 +479,13 @@ class TeamRunner:
             self._deliver(led, mb, parent_session, parent, child, subtask, "task")
             child_result = self.run(child, subtask, team_id, parent_session, depth + 1)
             text = child_result.final_text
+            if not text and child_result.stopped_reason != "completed":
+                # Abnormal stop: tell the parent WHY (a model_error child once
+                # handed back None/"" and the raw len() crashed the delegate
+                # tool). An empty COMPLETED result stays "" — that is a
+                # different fact require_nonempty_result must still see.
+                text = (f"CHILD STOPPED [{child_result.stopped_reason}]: "
+                        f"{child!r} ended without a result")
             state["count"][child] = state["count"].get(child, 0) + 1
             if self._child_all_denied(child_result.session_id):
                 state["denied"].add(task_key)

@@ -239,7 +239,17 @@ class Kernel:
             seq = self.store.journal_append(
                 session_id, "MODEL_CALL_INTENT", {"iteration": iteration}
             )
-            resp: ModelResponse = self.adapter.complete(messages, tool_defs)
+            try:
+                resp: ModelResponse = self.adapter.complete(messages, tool_defs)
+            except Exception as e:  # noqa: BLE001 — same class as RUN-E's P0:
+                # model-facing I/O (timeouts, network, server garbage, parse
+                # failures) must stop the run GRACEFULLY, not stack-trace the
+                # process. The journal keeps the dangling MODEL_CALL_INTENT for
+                # recovery; the ledger records the failure as a chain fact.
+                self.ledger.append(session_id, {
+                    "type": "model_error", "iteration": iteration,
+                    "class": type(e).__name__, "detail": str(e)[:200]})
+                return self._stop(session_id, iteration, "model_error")
             self.store.journal_append(
                 session_id, "MODEL_CALL_DONE",
                 {"iteration": iteration, "intent_seq": seq,

@@ -27,6 +27,12 @@ def test_clean_session_reports_clean(tmp_path):
     assert kernel.recover(sid).status == "clean"
 
 
+class _PowerFailure(BaseException):
+    """Simulates REAL process death mid-call. Deliberately NOT Exception:
+    adapter Exceptions now fold to a graceful journaled model_error stop
+    (RUN-E class sweep), so only a genuine death leaves a dangling intent."""
+
+
 def test_crash_during_model_call_classified_reissue(tmp_path):
     """Adapter raises AFTER the intent record is journaled — exactly the
     window a real crash occupies. Recovery must say: reissue."""
@@ -34,12 +40,12 @@ def test_crash_during_model_call_classified_reissue(tmp_path):
     kernel_store = Store(str(tmp_path / "r.db"))
     kernel = Kernel(
         kernel_store,
-        MockAdapter([ConnectionError("power pulled mid-call")]),
+        MockAdapter([_PowerFailure("power pulled mid-call")]),
         {"echo": tool},
         CapabilityManifest(tools=frozenset({"echo"})),
     )
     sid = kernel_store.create_session()
-    with pytest.raises(ConnectionError):
+    with pytest.raises(_PowerFailure):
         kernel.run(sid, "go")
     assert kernel_store.journal_tail(sid)["state"] == "MODEL_CALL_INTENT"
 
@@ -157,10 +163,10 @@ def test_full_run_after_recovery_completes(tmp_path):
     """End-to-end: crash → restart → recover → finish the task."""
     tool = ToolSpec("echo", lambda a: f"echo:{a['v']}", idempotent=True)
     store = Store(str(tmp_path / "r.db"))
-    kernel = Kernel(store, MockAdapter([ConnectionError("crash")]),
+    kernel = Kernel(store, MockAdapter([_PowerFailure("crash")]),
                     {"echo": tool}, CapabilityManifest(tools=frozenset({"echo"})))
     sid = store.create_session()
-    with pytest.raises(ConnectionError):
+    with pytest.raises(_PowerFailure):
         kernel.run(sid, "task")
 
     store2 = Store(str(tmp_path / "r.db"))
