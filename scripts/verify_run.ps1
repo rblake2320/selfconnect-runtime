@@ -114,6 +114,11 @@ foreach ($s in $data.sessions) {
     }
 }
 $auditorSession = [bool]($data.delegation_tree | Where-Object { $_.agent -eq 'auditor' })
+# An auditor is EXPECTED only when the team actually declares one (e.g. the
+# security-team). A single-agent team (e.g. compliance) has none by design, so
+# a missing auditor there is not a failure. The auditor gate applies only when
+# expected.
+$auditorExpected = $auditorSession
 
 Write-Host ("fs_read/fs_list events ({0}):" -f $reads.Count)
 $reads | ForEach-Object { Write-Host $_ }
@@ -124,8 +129,13 @@ if ($errors.Count) { $errors | ForEach-Object { Write-Host $_ } } else { Write-H
 
 $auditorRan = $auditorEdge -and $auditorSession
 Write-Host ''
-if ($auditorRan) { Write-Host 'AUDITOR_RAN: YES  (delegate edge + auditor session in the chain)' }
-else { Write-Host 'AUDITOR_RAN: NO' }
+if (-not $auditorExpected) {
+    Write-Host 'AUDITOR_RAN: N/A  (this team declares no auditor)'
+} elseif ($auditorRan) {
+    Write-Host 'AUDITOR_RAN: YES  (delegate edge + auditor session in the chain)'
+} else {
+    Write-Host 'AUDITOR_RAN: NO'
+}
 
 # ---- 6. review report, if one exists ---------------------------------------
 $report = Get-ChildItem -Path $RunHome -Filter 'security-review*.md' -ErrorAction SilentlyContinue |
@@ -141,6 +151,9 @@ if ($report) { Write-Host ("review report: {0}" -f $report.FullName) }
 else { Write-Host 'review report: (none found in the run home)' }
 
 Write-Host ''
-if (-not $auditorRan) { Write-Host 'FAILED: auditor edge missing from the chain'; exit 3 }
-Write-Host 'ALL CHECKS PASSED - bundle verified with your key; auditor ran per the chain.'
+if ($auditorExpected -and -not $auditorRan) {
+    Write-Host 'FAILED: team declares an auditor but no auditor edge is in the chain'
+    exit 3
+}
+Write-Host 'ALL CHECKS PASSED - bundle verified with your key.'
 exit 0
