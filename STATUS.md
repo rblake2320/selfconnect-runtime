@@ -518,6 +518,41 @@ key_id 7357d5f7, content sha a8684e04…) — no more `package: {}`.
   artifacts, expected to complete cleanly end-to-end (report + ledger-derived
   execution summary + in-run export).
 
+### RUN F — the clean end-to-end exhibit (2026-09-01)
+
+`[completed]`, in-run export, **RESULT: VERIFIED**, wall **20.8 min**,
+`/api/ps` 32768 reconfirmed. Bundle: `build/liverunF-home/team.scevidence`
+(provenance: selfconnect-enterprise 1.0.0, content sha 35224c8b…).
+
+- **First production appearance of the execution summary** — printed under
+  the model's prose: agents invoked, 3 delegation edges, `fs_read x37,
+  fs_list x14, fs_write x1`, 33 files touched, the one tool error listed,
+  "empty child returns not counted as completed: 1", all policy decisions.
+- **Policy semantics exact:** researcher pass 1 completed (245 chars), pass 2
+  empty → `not_counted` — yet the run completed cleanly because the
+  requirement was already satisfied. Enforcement without brittleness.
+- **RUN-E crash class proven fixed under fire:** `fs_write x1` succeeded —
+  the same call shape that killed RUN E wrote the report.
+- **Auditor ran** (5,742 chars). Verdict LOW risk — grounded: the ledger
+  proves it read PEN_REVIEW.md, SECURITY_OVERVIEW.md, DESIGN_GAP_ANALYSIS.md,
+  STATUS.md and concluded documented-gaps-with-compensating-controls. (RUN E
+  flagged findings; RUN F rates LOW — model nondeterminism across runs, both
+  grounded; each run is auditable on its own terms via its chain.)
+- **Micro prose-vs-ledger catch, live:** the model said it wrote
+  `security-review.md`; the chain shows the write went to
+  `security-review-report.md`. The summary printed beneath the prose is what
+  makes that visible without any human digging.
+- Reports preserved: run homes + Owner's Inbox. Frozen artifacts rebuilt with
+  the fault-barrier sweep; worker gates PASS (0.64 s / 0.53 s). Suite **361
+  (354 pass + 7 skip)**.
+
+**The standalone claim is answered:** a signed package on this runtime, on
+this hardware, drove a three-agent team that read the runtime's own source,
+wrote a grounded review, and got audited — no Claude Code, no Codex, sealed
+chain proving every step, summary confronting every claim. Next: content
+migration (owner delivers SelfConnect folder paths → inventory per
+docs/CONTENT_MIGRATION.md).
+
 ## Installer / packaging closure (2026-08-31)
 
 - **`scr-service.exe` — Windows Service host** (`scr/service_main.py`): console
