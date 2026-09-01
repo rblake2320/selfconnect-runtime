@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -211,18 +212,27 @@ def _eff_hash(m: CapabilityManifest) -> str:
 class TeamRunner:
     def __init__(self, store: Store, loaded: LoadedTeam,
                  adapter_factory: AdapterFactory, tools_factory: ToolsFactory,
-                 policy=None, max_depth: int = 4):
+                 policy=None, max_depth: int = 4, sandbox=None):
         self.store = store
         self.loaded = loaded
         self.adapter_factory = adapter_factory
         self.tools_factory = tools_factory
         self.policy = policy
         self.max_depth = max_depth
+        self.sandbox = sandbox                 # shared SandboxRunner (for cancel)
         self.sessions: dict[str, str] = {}     # agent -> its session (last run)
         self.last_team_id: Optional[str] = None
+        self._cancel = threading.Event()
 
     def revoke(self, agent: str) -> None:
         self.loaded.team.revoke(agent)
+
+    def cancel(self) -> None:
+        """G5 at team scope: stop the whole team cooperatively AND kill every
+        in-flight subagent process tree — no orphans."""
+        self._cancel.set()
+        if self.sandbox is not None:
+            self.sandbox.kill_all()
 
     def run(self, entry_name: str, task: str, team_id: Optional[str] = None,
             parent_session: Optional[str] = None, depth: int = 0) -> RunResult:
@@ -245,6 +255,7 @@ class TeamRunner:
         kernel = Kernel(self.store, self.adapter_factory(entry), tools, eff,
                         system_prompt=self.loaded.specs[entry].system_prompt,
                         policy=self.policy)
+        kernel.cancel_check = self._cancel.is_set    # team cancel reaches every level
         result = kernel.run(sid, task)
         result.session_id = sid
         return result
@@ -255,6 +266,8 @@ class TeamRunner:
         mb = Mailbox(self.store, team_id)
 
         def fn(args: dict) -> str:
+            if self._cancel.is_set():
+                return "CANCELLED: team run cancelled; no further delegation"
             child = str(args.get("agent", ""))
             subtask = str(args.get("task", ""))
             allowed = self.loaded.team.edges.get(parent, [])
@@ -295,6 +308,25 @@ class TeamRunner:
         led.append(session, {"type": "mailbox", "from": frm, "to": to,
                              "direction": direction,
                              "body_sha256": hashlib.sha256(body.encode()).hexdigest()})
+
+
+def team_recover(store: Store, team_id: str) -> list[dict]:
+    """Team-level crash recovery: classify EACH subagent session individually
+    via the kernel's single-session recovery (resume / safe_reissue /
+    quarantine / reissue_model_call / clean). Completed children keep their
+    results (cached); a child killed mid non-idempotent side effect is
+    quarantined; the orchestrator's dangling delegate is quarantined too until
+    a human resolves it. Uses throwaway kernels — recover only reads the
+    journal tail + idempotency cache."""
+    from .capability import CapabilityManifest
+    from .gateway import MockAdapter
+    reports = []
+    for m in store.team_members(team_id):
+        k = Kernel(store, MockAdapter([]), {}, CapabilityManifest())
+        rep = k.recover(m["session_id"])
+        reports.append({"agent": m["agent"], "session": m["session_id"],
+                        "depth": m["depth"], "status": rep.status, "detail": rep.detail})
+    return reports
 
 
 def verify_team_mailbox(store: Store, team_id: str) -> tuple[bool, list[str]]:
