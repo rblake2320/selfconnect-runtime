@@ -132,7 +132,7 @@ class OllamaAdapter:
     """Local models — fully offline path. No credential required."""
 
     def __init__(self, base_url: str = "http://127.0.0.1:11434", model: str = "llama3.1",
-                 timeout: float = 300.0):
+                 timeout: float = 600.0):   # local reasoning models can think a long time
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout

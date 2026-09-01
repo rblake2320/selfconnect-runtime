@@ -39,7 +39,8 @@ def cmd_model_add(args) -> int:
         secret_ref = f"model:{args.name}"
         Vault(cfg.home).store_secret(secret_ref, args.secret)
     cfg.add_model(args.name, args.adapter, args.model,
-                  base_url=args.base_url or "", secret_ref=secret_ref)
+                  base_url=args.base_url or "", secret_ref=secret_ref,
+                  timeout=args.timeout)
     cfg.save()
     print(f"added model {args.name!r} (adapter={args.adapter}, secret_ref={secret_ref or 'none'})")
     return 0
@@ -409,6 +410,8 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("name"); ma.add_argument("--adapter", required=True)
     ma.add_argument("--model", required=True); ma.add_argument("--base-url", dest="base_url")
     ma.add_argument("--secret", default=None)
+    ma.add_argument("--timeout", type=float, default=None,
+                    help="per-call timeout seconds (default 600; raise for slow local reasoning models)")
     ma.set_defaults(func=cmd_model_add)
     msub.add_parser("list").set_defaults(func=cmd_model_list)
 

@@ -24,8 +24,10 @@ def build_adapter(model_cfg: dict, secret: Optional[str]) -> Adapter:
     kind = model_cfg.get("adapter", "")
     model = model_cfg.get("model", "")
     base_url = model_cfg.get("base_url", "")
+    timeout = float(model_cfg.get("timeout") or 600.0)
     if kind == "ollama":
-        return OllamaAdapter(base_url=base_url or "http://127.0.0.1:11434", model=model)
+        return OllamaAdapter(base_url=base_url or "http://127.0.0.1:11434",
+                             model=model, timeout=timeout)
     if kind == "openai-compat":
         if not secret:
             raise ModelConfigError("openai-compat requires a stored secret")
