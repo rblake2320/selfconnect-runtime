@@ -1,7 +1,7 @@
 # STATUS — SelfConnect Runtime
 
 Honest per-phase state. Claims here must not exceed what tests prove.
-Last updated: 2026-08-31.
+Last updated: 2026-09-01.
 
 | Phase | Scope | State | Tests |
 |---|---|---|---|
@@ -234,7 +234,8 @@ session and bundles the full delegation tree; `verify.py` verifies it offline.
 
 - Suites: `test_team.py` (+9), `test_team_chaos.py` (+2 real kills),
   `test_team_evidence.py` (+3), `test_content_migration.py` rewritten to run a
-  REAL 3-agent team self-test. **334 tests (327 pass + 7 skip).**
+  REAL 3-agent team self-test. **339 tests (332 pass + 7 skip)** incl.
+  delegation policy (see below).
 - **Model tool-call fidelity (real finding):** the `delegate` tool requires a
   tool-capable model. **gemma3 → "does not support tools" (HTTP 400)** — cannot
   drive a team; **qwen3.6:27b emits correct `delegate` tool calls** — it can.
@@ -256,6 +257,64 @@ session and bundles the full delegation tree; `verify.py` verifies it offline.
   default 600 s); the re-run succeeded.
 - **Model tool-call requirement:** teams need a tool-capable model. gemma3
   cannot (400 "does not support tools"); qwen3.6:27b drives delegation.
+
+## Delegation policy — runtime-enforced, ledger-provable (2026-09-01)
+
+Motivation (owner finding): a prior qwen run printed an "Auditor Risk
+Assessment" heading while the ledger showed **six researcher delegations and
+zero auditor** — the model narrated work that never happened. Prompt guidance
+cannot fix this; enforcement must be data-driven and provable from the ledger.
+
+- **Feature.** Per-agent `delegation_policy` in `agents/*.yaml`, enforced by the
+  kernel and ledgered on every decision: `required_children` (a `finalize_guard`
+  refuses to finalize until each listed child completes — the run *cannot* report
+  `completed` with required work missing), `max_delegations_per_child` (excess
+  folded as denials), `no_redelegate_after_denial` (an all-denied child is not
+  re-delegated the same task — the team analogue of the kernel cycle guard).
+  Policy referencing an undeclared child is rejected at load.
+  `tests/test_delegation_policy.py` (+5, adversarial); suite **339 (332 pass +
+  7 skip)**. `selfconnect-enterprise` carries `required_children:
+  [researcher, auditor]`, `max 2`, `no_redelegate`. Re-signed; frozen
+  `scr.exe`/`scr-service.exe` + 43 MB MSI rebuilt with the policy code.
+- **Harness caught its own operator error (unfaked evidence).** While wiring the
+  enterprise self-test, a mis-driven researcher went all-denied and the
+  `finalize_guard` correctly refused to let the run report completion —
+  enforcement firing on real mis-driven input, not just in the happy-path test.
+
+### Live proof — RUN A (auditor question), per the ledger not the prose
+
+`scr run --workspace … sce.security-team "Run the security review …"` through
+the frozen `scr.exe` against the Spark (qwen3.6:27b), ~28.5 min wall. Exported +
+sealed, **team evidence bundle RESULT: VERIFIED** (per-session chains + seals +
+bundle seal, offline `verify.py`). Verified delegation tree:
+
+```
+lead  (session 3e1bce3b, depth 0)   22 events
+    auditor      (session 2fa7229f, depth 1)   4 events
+    researcher   (session cbd92bce, depth 1)  14 events
+    researcher   (session 1fa99f3a, depth 1)  17 events
+```
+
+- **AUDITOR RAN: YES** — a real `lead → auditor` edge and a completed auditor
+  session, in a VERIFIED bundle. The required-children policy forced the auditor
+  to actually run before finalize; the researcher delegation was capped at **2**
+  (max_delegations_per_child held — no storm). This closes the
+  "heading-with-no-auditor" finding, proven from the ledger.
+- **Checks 2/3 (files read / substantive findings): NOT tested this run — and
+  it was MY harness's fault, not the runtime's.** The live-run bash script
+  passed `--workspace C:\dev\selfconnect-runtime` **unquoted**; bash stripped the
+  backslashes to a drive-relative `C:devselfconnect-runtime`, which Windows
+  `abspath` resolved to `C:\dev\selfconnect-runtime\devselfconnect-runtime` — a
+  nonexistent dir. Proven deterministically offline (mangled input reproduces
+  the exact observed path; the forward-slash form resolves to the real repo).
+  So the researcher got Access Denied on everything and the review was empty —
+  **but honestly empty**: the model reported it was blocked rather than
+  fabricating findings. Harness fixed (quote + forward slashes); a python
+  convenience-dump also crashed on an msys path (fixed) — irrelevant, the
+  verified bundle's tree is the authoritative source.
+- **RUN B (workspace binding, checks 2/3): in flight** on the Spark with the
+  corrected `--workspace "C:/dev/selfconnect-runtime"`, to test whether real file
+  access yields file/line-specific findings. Result appended when it lands.
 
 ## Installer / packaging closure (2026-08-31)
 
