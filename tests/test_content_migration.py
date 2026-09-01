@@ -63,7 +63,14 @@ class _TeamStandIn:
     def complete(self, messages, tools):
         system = next((m["content"] for m in messages if m["role"] == "system"), "").lower()
         tool_results = [m for m in messages if m["role"] == "tool"]
-        if "orchestrator" in system:
+        # Precise role detection — the researcher/auditor prompts also mention
+        # "orchestrator" ("report to the orchestrator"), so match the identity
+        # sentence, not the bare word.
+        if "you are the researcher" in system:
+            return ModelResponse("findings: 2 issues in dependencies")
+        if "you are the auditor" in system:
+            return ModelResponse("risk verdict: medium")
+        if "orchestrator (lead)" in system:
             if len(tool_results) == 0:
                 return ModelResponse("", (ToolCall("d1", "delegate",
                                     {"agent": "researcher", "task": "gather findings"}),))
@@ -71,10 +78,6 @@ class _TeamStandIn:
                 return ModelResponse("", (ToolCall("d2", "delegate",
                                     {"agent": "auditor", "task": "assess risk"}),))
             return ModelResponse("security review complete: findings gathered and risk assessed")
-        if "researcher" in system:
-            return ModelResponse("findings: 2 issues in dependencies")
-        if "auditor" in system:
-            return ModelResponse("risk verdict: medium")
         return ModelResponse("ok")
 
 
