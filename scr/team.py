@@ -433,6 +433,12 @@ class TeamRunner:
         tools = dict(self.tools_factory(eff))
         kernel_policy_state = {"count": {}, "completed": set(), "denied": set()}
         spec_policy = self.loaded.specs[entry].policy
+        if spec_policy:
+            # Ledger the DECLARED policy (not just enforcement outcomes) so a
+            # verifier can read the required_children set from the chain and
+            # confirm every one ran — without the package on hand.
+            Ledger(self.store).append(sid, {"type": "policy_declared",
+                                            "agent": entry, **spec_policy})
         if team.edges.get(entry):
             # Grant the framework `delegate` tool to an orchestrator (it is not a
             # declared capability, so it is exempt from the widening check).

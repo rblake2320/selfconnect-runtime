@@ -133,12 +133,13 @@ def test_compliance_map_tool_capability_gated(tmp_path):
 # --------------------------------------------------------- multi-team package
 def test_enterprise_package_is_a_two_team_forest():
     loaded = load_team_from_dir(PKG_SRC, "C:/ws", "C:/out")
-    assert set(loaded.aliases) == {"sce.security-team", "sce.compliance"}
+    assert {"sce.security-team", "sce.compliance", "sce.local-agent"} <= set(loaded.aliases)
     assert loaded.team_of["lead"] == "lead"
     assert loaded.team_of["compliance"] == "compliance"
-    # the two teams are disjoint trees
+    # the teams are disjoint trees
     assert loaded.team_for("auditor") is loaded.team_for("lead")
     assert loaded.team_for("compliance") is not loaded.team_for("lead")
+    assert loaded.team_for("local-agent") is not loaded.team_for("compliance")
 
 
 def test_enterprise_package_builds_signs_and_verifies(tmp_path):

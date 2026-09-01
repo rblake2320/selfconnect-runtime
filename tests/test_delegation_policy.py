@@ -252,3 +252,34 @@ def test_provenance_ledgered_and_surfaced_in_team_bundle(tmp_path):
         bundle = _json.loads(z.read("bundle.json"))
     assert bundle["package"]["package"] == "selfconnect-enterprise"
     assert bundle["package"]["version"] == "1.0.0"
+
+
+# --------------------------------- policy declaration is chain-derivable
+def test_policy_declared_event_carries_required_children(tmp_path):
+    # A verifier must be able to read the REQUIRED set from the chain, not just
+    # the completed outcomes. The declared policy is ledgered at run start.
+    agents = {
+        "lead": {"capabilities": CAPS, "delegates": ["researcher", "auditor"],
+                 "delegation_policy": {"required_children": ["researcher", "auditor"],
+                                       "max_delegations_per_child": 2}},
+        "researcher": {"capabilities": CAPS},
+        "auditor": {"capabilities": CAPS},
+    }
+    scripts = {
+        "lead": [ModelResponse("", (_delegate("researcher"),)),
+                 ModelResponse("", (_delegate("auditor"),)),
+                 ModelResponse("final")],
+        "researcher": [ModelResponse("r")],
+        "auditor": [ModelResponse("a")],
+    }
+    runner, store = _runner(tmp_path, agents, scripts)
+    res = runner.run("lead", "go")
+    ev = _events(store, res.session_id)
+    pd = next(e for e in ev if e.get("type") == "policy_declared")
+    assert pd["agent"] == "lead"
+    assert pd["required_children"] == ["researcher", "auditor"]
+    # and both required children have a completed gate event
+    completed = {e.get("child") for e in ev if e.get("type") == "policy"
+                 and e.get("rule") == "required_children"
+                 and e.get("decision") == "completed"}
+    assert {"researcher", "auditor"} <= completed

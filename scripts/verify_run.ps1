@@ -4,10 +4,12 @@
 #
 # Generates a fresh 32-byte key from the OS CSPRNG at runtime (never seen by
 # any AI), exports the sealed team bundle to the Desktop, verifies it, and
-# prints the run's FACTS from the chain only: package provenance, delegation
-# tree, every fs_read/fs_list path, every denial and tool error, and
-# AUDITOR_RAN. Exits non-zero if verification fails or the auditor edge is
-# missing. Uses only the frozen scr.exe - no Python required.
+# prints the run's FACTS from the chain only: team (root agent), package
+# provenance, delegation tree, EVERY tool_exec (tool + primary argument), every
+# denial and tool error, and REQUIRED_CHILDREN_RAN (read from the ledgered
+# policy declaration — every declared required child must have run). Exits
+# non-zero if the bundle does not verify or a required child did not run.
+# Works for ANY layer/team. Uses only the frozen scr.exe - no Python required.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -94,47 +96,72 @@ foreach ($m in $data.delegation_tree) {
     }
 }
 
-$reads = New-Object System.Collections.Generic.List[string]
+# Team name = the depth-0 (root) agent of the delegation tree.
+$teamRoot = ($data.delegation_tree | Where-Object { $_.depth -eq 0 } |
+    Select-Object -First 1).agent
+Write-Host ("team (root agent): {0}" -f $teamRoot)
+
+$toolExec = New-Object System.Collections.Generic.List[string]
 $denied = New-Object System.Collections.Generic.List[string]
 $errors = New-Object System.Collections.Generic.List[string]
-$auditorEdge = $false
+$requiredChildren = New-Object System.Collections.Generic.List[string]
+$completedChildren = New-Object System.Collections.Generic.List[string]
 foreach ($s in $data.sessions) {
     foreach ($row in $s.events) {
         $e = $row.event | ConvertFrom-Json
         switch ($e.type) {
             'tool_exec' {
-                if (($e.tool -eq 'fs_read' -or $e.tool -eq 'fs_list') -and $e.path) {
-                    $reads.Add(("  [{0}] {1}  {2}" -f $s.agent, $e.tool, $e.path))
-                }
+                # EVERY tool, not just filesystem - the verifier is the only
+                # independent window into a layer's own tools. Show the primary
+                # argument (path for fs_*/compliance_map, url for http_get,
+                # binary for proc_exec, agent for delegate) so the actual call
+                # is visible, not just its name.
+                $arg = ''
+                if ($e.path) { $arg = $e.path }
+                elseif ($e.url) { $arg = $e.url }
+                elseif ($e.binary) { $arg = $e.binary }
+                elseif ($e.bundle) { $arg = $e.bundle }
+                elseif ($e.child) { $arg = "-> $($e.child)" }
+                $toolExec.Add(("  [{0}] {1}  {2}" -f $s.agent, $e.tool, $arg))
             }
             'cap_denied' { $denied.Add(("  [{0}] {1}: {2}" -f $s.agent, $e.tool, $e.reason)) }
             'tool_error' { $errors.Add(("  [{0}] {1} [{2}]: {3}" -f $s.agent, $e.tool, $e.class, $e.detail)) }
-            'delegate'   { if ($e.child -eq 'auditor') { $auditorEdge = $true } }
+            'policy_declared' {
+                foreach ($c in @($e.required_children)) {
+                    if ($c) { [void]$requiredChildren.Add($c) }
+                }
+            }
+            'policy' {
+                if ($e.rule -eq 'required_children' -and $e.decision -eq 'completed' -and $e.child) {
+                    [void]$completedChildren.Add($e.child)
+                }
+            }
         }
     }
 }
-$auditorSession = [bool]($data.delegation_tree | Where-Object { $_.agent -eq 'auditor' })
-# An auditor is EXPECTED only when the team actually declares one (e.g. the
-# security-team). A single-agent team (e.g. compliance) has none by design, so
-# a missing auditor there is not a failure. The auditor gate applies only when
-# expected.
-$auditorExpected = $auditorSession
+$req = $requiredChildren | Select-Object -Unique
+$done = $completedChildren | Select-Object -Unique
 
-Write-Host ("fs_read/fs_list events ({0}):" -f $reads.Count)
-$reads | ForEach-Object { Write-Host $_ }
+Write-Host ("tool executions ({0}) - ALL tools, with primary argument:" -f $toolExec.Count)
+if ($toolExec.Count) { $toolExec | ForEach-Object { Write-Host $_ } } else { Write-Host '  (none)' }
 Write-Host ("capability denials ({0}):" -f $denied.Count)
 if ($denied.Count) { $denied | ForEach-Object { Write-Host $_ } } else { Write-Host '  (none)' }
 Write-Host ("tool errors ({0}):" -f $errors.Count)
 if ($errors.Count) { $errors | ForEach-Object { Write-Host $_ } } else { Write-Host '  (none)' }
 
-$auditorRan = $auditorEdge -and $auditorSession
+# Generic required-children gate: read the DECLARED requirement from the chain
+# and confirm every required child ran. Works for any layer/team.
 Write-Host ''
-if (-not $auditorExpected) {
-    Write-Host 'AUDITOR_RAN: N/A  (this team declares no auditor)'
-} elseif ($auditorRan) {
-    Write-Host 'AUDITOR_RAN: YES  (delegate edge + auditor session in the chain)'
+$missing = @($req | Where-Object { $done -notcontains $_ })
+if (@($req).Count -eq 0) {
+    Write-Host 'REQUIRED_CHILDREN_RAN: N/A  (team declares no required children)'
+    $requiredOk = $true
+} elseif ($missing.Count -eq 0) {
+    Write-Host ("REQUIRED_CHILDREN_RAN: YES  required=[{0}] all completed per the chain" -f ($req -join ', '))
+    $requiredOk = $true
 } else {
-    Write-Host 'AUDITOR_RAN: NO'
+    Write-Host ("REQUIRED_CHILDREN_RAN: NO  required=[{0}] missing=[{1}]" -f ($req -join ', '), ($missing -join ', '))
+    $requiredOk = $false
 }
 
 # ---- 6. review report, if one exists ---------------------------------------
@@ -151,8 +178,8 @@ if ($report) { Write-Host ("review report: {0}" -f $report.FullName) }
 else { Write-Host 'review report: (none found in the run home)' }
 
 Write-Host ''
-if ($auditorExpected -and -not $auditorRan) {
-    Write-Host 'FAILED: team declares an auditor but no auditor edge is in the chain'
+if (-not $requiredOk) {
+    Write-Host 'FAILED: a required child declared in the chain did not run'
     exit 3
 }
 Write-Host 'ALL CHECKS PASSED - bundle verified with your key.'

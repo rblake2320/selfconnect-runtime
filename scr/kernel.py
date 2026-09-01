@@ -52,13 +52,17 @@ def _run_tool_fn(fn, call) -> str:
 
 
 def _arg_path(args: dict) -> dict:
-    """Evidence enrichment: for path-taking tools (fs_*), record WHICH path was
-    touched (bounded) — "what did it actually read" is the first question a
-    customer auditor asks of a review run. Everything else stays hash-only."""
-    p = args.get("path")
-    if isinstance(p, str) and p:
-        return {"path": p[:300]}
-    return {}
+    """Evidence enrichment: record the PRIMARY argument of a tool call (bounded)
+    so a verifier can show WHAT each tool actually operated on — "what did it
+    read/map/fetch/run", the first question a customer auditor asks. Every
+    layer brings its own tools; the ledger (and thus the offline verifier) must
+    show more than filesystem paths. Non-primary args stay hash-only."""
+    out: dict = {}
+    for key in ("path", "bundle", "url", "binary"):
+        v = args.get(key)
+        if isinstance(v, str) and v:
+            out[key] = v[:300]
+    return out
 
 
 @dataclass(frozen=True)

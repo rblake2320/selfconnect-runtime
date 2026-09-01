@@ -400,3 +400,14 @@ def test_cli_run_does_not_mutate_workspace(tmp_path):
     assert sorted(os.listdir(ws)) == before    # NOTHING created in the target
     assert not (ws / "out").exists()
     assert os.path.isdir(os.path.join(home, "out"))   # output lives at home
+
+
+# ------------- every tool's primary arg is in the chain (verifier window)
+def test_tool_exec_records_primary_arg_for_all_tools():
+    from scr.kernel import _arg_path
+    assert _arg_path({"path": "C:/x/y.py"}) == {"path": "C:/x/y.py"}
+    assert _arg_path({"bundle": "C:/x/run.scevidence", "out": "C:/o/r.md"}) \
+        == {"bundle": "C:/x/run.scevidence"}          # compliance_map: bundle shown
+    assert _arg_path({"url": "http://h/x"}) == {"url": "http://h/x"}
+    assert _arg_path({"binary": "git", "args": ["status"]}) == {"binary": "git"}
+    assert _arg_path({"nothing": 1}) == {}
