@@ -3,6 +3,19 @@
 Honest per-phase state. Claims here must not exceed what tests prove.
 Last updated: 2026-09-01.
 
+## Content-migration proof matrix (SelfConnect layers → SCR)
+
+The real goal: prove every SelfConnect layer runs for real on the runtime with
+NO Claude Code / Codex. A layer is "working" ONLY when all three cells are
+checked. **Empty cells stay empty** — no cell is checked on the assistant's
+say-so. `verified_by_ron` = Ron ran `verify_run.ps1` on that layer's bundle and
+it passed. Layer list + port order come from `docs/SELFCONNECT_LAYERS.md`
+(pending Ron's review of the inventory before any porting).
+
+| Layer | Ported (signed in pkg) | Self-test live on qwen3.6:27b | Verified by Ron |
+|---|---|---|---|
+| _(inventory in progress — rows added after Ron approves SELFCONNECT_LAYERS.md)_ | | | |
+
 | Phase | Scope | State | Tests |
 |---|---|---|---|
 | 1 | Kernel, recovery, capability core, ledger, gateway, atomic, locks | ✅ complete | 69 (66 pass + 3 POSIX-skip on Windows) |
