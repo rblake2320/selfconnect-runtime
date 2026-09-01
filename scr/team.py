@@ -46,6 +46,12 @@ class AgentSpec:
     system_prompt: str
     manifest: CapabilityManifest
     delegates: tuple[str, ...] = ()
+    # Delegation policy (runtime-enforced, every decision ledgered):
+    #   required_children: [names]          finalize refused until each completes
+    #   max_delegations_per_child: int      excess attempts folded as denials
+    #   no_redelegate_after_denial: bool    re-delegating a same-task all-denied
+    #                                       child is blocked (team cycle guard)
+    policy: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -91,6 +97,7 @@ def _parse_agents(agent_docs: list[dict], workspace: str) -> dict[str, AgentSpec
             system_prompt=(d.get("system_prompt") or f"You are the {name} agent.").strip(),
             manifest=_manifest_from_caps(d.get("capabilities") or {}, workspace),
             delegates=tuple(d.get("delegates") or ()),
+            policy=dict(d.get("delegation_policy") or {}),
         )
     return specs
 
@@ -132,6 +139,13 @@ def _validate_topology(specs: dict[str, AgentSpec]) -> tuple[str, dict]:
         pm = specs[parent].manifest
         for k in kids:
             _reject_widening(parent, k, pm, specs[k].manifest)
+    # delegation policy must only reference DECLARED delegates of that agent
+    for name, spec in specs.items():
+        for ref in (spec.policy.get("required_children") or []):
+            if ref not in edges.get(name, []):
+                raise TeamLoadError(
+                    f"{name!r} delegation policy requires undeclared child {ref!r} "
+                    f"(declared delegates: {edges.get(name, [])})")
     return root, edges
 
 
@@ -248,24 +262,65 @@ class TeamRunner:
         self.sessions[entry] = sid
 
         tools = dict(self.tools_factory(eff))
+        kernel_policy_state = {"count": {}, "completed": set(), "denied": set()}
+        spec_policy = self.loaded.specs[entry].policy
         if self.loaded.team.edges.get(entry):
             # Grant the framework `delegate` tool to an orchestrator (it is not a
             # declared capability, so it is exempt from the widening check).
             import dataclasses
             eff = dataclasses.replace(eff, tools=eff.tools | {"delegate"})
-            tools["delegate"] = self._delegate_tool(entry, team_id, depth, sid)
+            tools["delegate"] = self._delegate_tool(entry, team_id, depth, sid,
+                                                    spec_policy, kernel_policy_state)
         kernel = Kernel(self.store, self.adapter_factory(entry), tools, eff,
                         system_prompt=self.loaded.specs[entry].system_prompt,
                         policy=self.policy)
         kernel.cancel_check = self._cancel.is_set    # team cancel reaches every level
+        if spec_policy.get("required_children"):
+            kernel.finalize_guard = self._finalize_guard(spec_policy, kernel_policy_state)
         result = kernel.run(sid, task)
         result.session_id = sid
         return result
 
+    def _finalize_guard(self, policy: dict, state: dict):
+        required = list(policy.get("required_children") or [])
+
+        def guard(_session_id: str) -> Optional[str]:
+            missing = [c for c in required if c not in state["completed"]]
+            if missing:
+                return (f"POLICY: cannot finalize yet — required team members have "
+                        f"not completed successfully: {missing}. Delegate the task to "
+                        f"each of them (use the delegate tool) before finalizing.")
+            return None
+        return guard
+
+    def _child_all_denied(self, child_session: str) -> bool:
+        """True if the child made tool calls and EVERY one was capability-denied
+        (no successful tool_exec) — the team-level analogue of a stuck loop."""
+        denied = execed = 0
+        for r in self.store.conn.execute(
+                "SELECT event FROM ledger WHERE session_id=? ORDER BY seq",
+                (child_session,)).fetchall():
+            try:
+                e = json.loads(r["event"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if e.get("type") == "cap_denied":
+                denied += 1
+            elif e.get("type") == "tool_exec":
+                execed += 1
+        return denied > 0 and execed == 0
+
     def _delegate_tool(self, parent: str, team_id: str, depth: int,
-                       parent_session: str) -> ToolSpec:
+                       parent_session: str, policy: dict, state: dict) -> ToolSpec:
         led = Ledger(self.store)
         mb = Mailbox(self.store, team_id)
+        max_per = policy.get("max_delegations_per_child")
+        no_redelegate = bool(policy.get("no_redelegate_after_denial"))
+
+        def _policy(child, rule, decision, reason):
+            led.append(parent_session, {"type": "policy", "parent": parent,
+                                        "child": child, "rule": rule,
+                                        "decision": decision, "reason": reason})
 
         def fn(args: dict) -> str:
             if self._cancel.is_set():
@@ -282,6 +337,21 @@ class TeamRunner:
                 led.append(parent_session, {"type": "delegate_denied", "parent": parent,
                                             "child": child, "reason": "depth_limit"})
                 return f"DENIED: delegation depth limit ({self.max_depth}) reached"
+            task_key = (child, hashlib.sha256(subtask.encode()).hexdigest())
+            # POLICY: no re-delegate after an all-denied run of the same task
+            if no_redelegate and task_key in state["denied"]:
+                _policy(child, "no_redelegate_after_denial", "denied",
+                        "child previously failed this exact task (all tool calls denied)")
+                self.on_event(f"  ⨯ policy: {child} not re-delegated (prior all-denied)")
+                return (f"DENIED by policy: {child!r} already ran this task and every "
+                        f"tool call was denied; retrying will not help. Adjust the task "
+                        f"or the capability grant, or proceed without it.")
+            # POLICY: max delegations per child
+            if max_per is not None and state["count"].get(child, 0) >= int(max_per):
+                _policy(child, "max_delegations_per_child", "denied",
+                        f"max {max_per} delegations to {child} reached")
+                self.on_event(f"  ⨯ policy: max delegations to {child} reached")
+                return f"DENIED by policy: max {max_per} delegations to {child!r} reached"
             try:
                 eff = self.loaded.team.effective_manifest(child)
             except DelegationError as e:
@@ -296,6 +366,15 @@ class TeamRunner:
             self._deliver(led, mb, parent_session, parent, child, subtask, "task")
             child_result = self.run(child, subtask, team_id, parent_session, depth + 1)
             text = child_result.final_text
+            state["count"][child] = state["count"].get(child, 0) + 1
+            if self._child_all_denied(child_result.session_id):
+                state["denied"].add(task_key)
+                _policy(child, "no_redelegate_after_denial", "marked_denied",
+                        "child run ended with all tool calls denied")
+                self.on_event(f"  ⚠ {child} run was all-denied (fs/tool access)")
+            else:
+                state["completed"].add(child)
+                _policy(child, "required_children", "completed", "child completed")
             self.on_event(f"  ← {child} returned ({len(text)} chars)")
             self._deliver(led, mb, parent_session, child, parent, text, "result")
             return text

@@ -142,6 +142,9 @@ class Kernel:
         # True the loop stops with reason "cancelled" between iterations and
         # before each tool call. Set by the SessionManager after construction.
         self.cancel_check: Optional[Callable[[], bool]] = None
+        # Team delegation policy hook: given the session id, returns a reason to
+        # REFUSE finalization (injected so the model continues) or None to allow.
+        self.finalize_guard: Optional[Callable[[str], Optional[str]]] = None
 
     # ---------------------------------------------------------------- run
     def run(self, session_id: str, user_text: str) -> RunResult:
@@ -231,6 +234,17 @@ class Kernel:
                 return self._stop(session_id, iteration, "budget")
 
             if not resp.tool_calls:
+                # Delegation policy: refuse to finalize until required work is done.
+                if self.finalize_guard is not None:
+                    reason = self.finalize_guard(session_id)
+                    if reason:
+                        if resp.text:
+                            self.store.add_message(session_id, "assistant", resp.text)
+                        self.store.add_message(session_id, "user", reason)
+                        self.ledger.append(session_id, {
+                            "type": "policy", "rule": "required_children",
+                            "decision": "finalize_refused", "reason": reason})
+                        continue          # loop again; do NOT finalize
                 self.store.add_message(session_id, "assistant", resp.text)
                 self.store.journal_append(session_id, "FINALIZE", {"iteration": iteration})
                 self.ledger.append(session_id, {"type": "finalize", "iteration": iteration})
