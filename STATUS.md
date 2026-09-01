@@ -239,8 +239,23 @@ session and bundles the full delegation tree; `verify.py` verifies it offline.
   tool-capable model. **gemma3 → "does not support tools" (HTTP 400)** — cannot
   drive a team; **qwen3.6:27b emits correct `delegate` tool calls** — it can.
   Single-agent `run` works on gemma3 (no tools sent).
-- **Live team proof:** running `scr run sce.security-team` through the frozen
-  `scr.exe` against the Spark (qwen3.6:27b) — numbers recorded on completion.
+- **Live team proof — ✅ (2026-09-01).** `scr run sce.security-team "Run the
+  security review on C:/target/repo"` through the **frozen `scr.exe`** against
+  the Spark (qwen3.6:27b): stopped_reason **completed**, final report began
+  "security review complete". Delegation tree **depth 0→1, 3 sessions**
+  (orchestrator `lead` + 2 delegated subagents); wall time **~1100 s (18.3 min)**
+  — a slow 27B reasoning model. The exported **team evidence bundle VERIFIED**
+  (per-session chains + seals + bundle seal, offline `verify.py`, full tree).
+  Two honest notes: (a) the subagents correctly got **Access Denied** on
+  `C:/target/repo` — it is outside their attenuated fs roots, a live proof of
+  per-edge capability enforcement; (b) qwen delegated to `researcher` **twice**
+  (the ledger records the real tree), diverging from its own prose narrative
+  that claimed an auditor ran — the tamper-evident ledger over the model's
+  words. First attempt failed with a per-call `TimeoutError` (300 s too short
+  for the 27B thinking model) → fixed via `scr model add --timeout` (local
+  default 600 s); the re-run succeeded.
+- **Model tool-call requirement:** teams need a tool-capable model. gemma3
+  cannot (400 "does not support tools"); qwen3.6:27b drives delegation.
 
 ## Installer / packaging closure (2026-08-31)
 
