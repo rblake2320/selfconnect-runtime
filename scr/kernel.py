@@ -38,6 +38,16 @@ from .state import Store
 
 
 # ------------------------------------------------------------------ tools
+def _arg_path(args: dict) -> dict:
+    """Evidence enrichment: for path-taking tools (fs_*), record WHICH path was
+    touched (bounded) — "what did it actually read" is the first question a
+    customer auditor asks of a review run. Everything else stays hash-only."""
+    p = args.get("path")
+    if isinstance(p, str) and p:
+        return {"path": p[:300]}
+    return {}
+
+
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
@@ -311,6 +321,7 @@ class Kernel:
                 json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
             "result_sha256": hashlib.sha256(result.encode()).hexdigest(),
             "idem_key": idem_key, "parallel": True,
+            **_arg_path(call.arguments),
         })
         return result
 
@@ -465,6 +476,7 @@ class Kernel:
                 json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
             "result_sha256": hashlib.sha256(result.encode()).hexdigest(),
             "idem_key": idem_key,
+            **_arg_path(call.arguments),
         })
         return result
 

@@ -75,7 +75,8 @@ def test_finalize_refused_until_required_child_completes(tmp_path):
     runner, store = _runner(tmp_path, agents, scripts)
     res = runner.run("lead", "review")
     assert res.stopped_reason == "completed"
-    assert res.final_text == "final report with real audit"
+    assert res.final_text.startswith("final report with real audit")
+    assert "RUNTIME EXECUTION SUMMARY" in res.final_text   # ledger-derived facts
     ev = _events(store, res.session_id)
     assert any(e.get("type") == "policy" and e.get("decision") == "finalize_refused" for e in ev)
     assert any(e.get("type") == "policy" and e.get("child") == "auditor"
@@ -171,7 +172,7 @@ def test_empty_child_result_not_counted_as_completed(tmp_path):
     runner, store = _runner(tmp_path, agents, scripts)
     res = runner.run("lead", "go")
     assert res.stopped_reason == "completed"
-    assert res.final_text == "final with real findings"
+    assert res.final_text.startswith("final with real findings")
     ev = _events(store, res.session_id)
     assert any(e.get("type") == "policy" and e.get("rule") == "require_nonempty_result"
                and e.get("decision") == "not_counted" for e in ev)

@@ -377,8 +377,47 @@ sessions. Ledger dump: `DELEGATIONS [researcher, researcher, auditor, auditor]`,
   the pin is now written next to the package. Frozen `scr.exe` smoke-tested:
   install-against-pin OK, doctor OK, **workspace fail-fast fires in the frozen
   artifact** (resolved path + raw argument, exit 1).
-- **RUN C in flight** with all three fixes (new exe + re-signed package) to
-  test checks 2/3: real file reads and file/line-specific findings.
+- **RUN C (honest record): killed by operator error, no bundle.** The liverun
+  script was edited (adding `--num-ctx`) while RUN C's bash was still executing
+  it; bash reads scripts incrementally and died mid-file. Rule adopted: one
+  script file per run, never edit a script a live process is executing
+  (`build/liverun_d.sh` onward). Before dying, RUN C proved two fixes live in
+  the frozen exe: `require_nonempty_result` fired ("researcher returned empty
+  - not counted") and the lead passed the real workspace path in its
+  delegation text (caps context reached the lead).
+- **Ollama context truncation — fix landed, root-cause line UNPROVEN.** The
+  adapter now always sends `options.num_ctx` (default 16384, `scr model add
+  --num-ctx`); the runtime must not depend on server defaults. But the "~4k
+  default strangled qwen" causal claim was inferred, not verified — the
+  owner's own run observed `/api/ps` reporting `context_length: 16384` for
+  loaded qwen, contradicting the 4k inference (a global `OLLAMA_CONTEXT_LENGTH`
+  on the Spark, or a different load path, are both possible). RUN D probes
+  `/api/ps` DURING the run and records the real loaded context; the empty-
+  return cause stays open until that lands. Memory watch: 32k KV cache on a
+  23 GB model with vLLM resident — a failed model load in RUN D is the Spark,
+  not the runtime.
+
+### Owner additions (2026-09-01) — implemented + tested (suite 350 = 343+7)
+
+- **Grant block ledgered next to the enforced manifest** (`grant_context`
+  event, every team session): `eff_cap_sha256` (what is ENFORCED) +
+  `grant_block_sha256` / `system_prompt_sha256` (what the agent was TOLD), in
+  the same hash chain — an auditor can now prove instruction/enforcement
+  divergence, the prompt-injection surface. Hashes recomputable from the
+  manifest (tested).
+- **Ledger-derived execution summary on every team report** (standing product
+  feature): after the model's prose, the runtime appends its FACTS generated
+  from the chain — agents invoked, delegation edges, tool executions, **files
+  actually touched** (tool_exec events now carry a bounded `path` for fs
+  tools), capability denials, empty returns not counted, policy decisions —
+  ending "Any claim in the report above that conflicts with these facts is
+  unsupported by the ledger." A report with no reads says **"files touched:
+  NONE"** under the model's prose. The confabulation pattern (3/3 live runs:
+  "worker crashes", "Auditor Risk Assessment") is now answered by the product,
+  not a story. Regenerable standalone via `team_execution_summary(store,
+  team_id)`.
+- **RUN D in flight**: all fixes + `--num-ctx 32768` + live `/api/ps` probe;
+  checks 2/3 (real file reads, file/line findings) decided by its ledger.
 
 ## Installer / packaging closure (2026-08-31)
 

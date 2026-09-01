@@ -61,7 +61,8 @@ def test_valid_team_loads_and_runs(tmp_path):
     runner, store = _runner(tmp_path, agents, scripts)
     res = runner.run("lead", "run the job")
     assert res.stopped_reason == "completed"
-    assert res.final_text == "assembled the worker's result"
+    assert res.final_text.startswith("assembled the worker's result")
+    assert "RUNTIME EXECUTION SUMMARY" in res.final_text
     tool_msgs = [m for m in store.get_messages(res.session_id) if m["role"] == "tool"]
     assert any("worker completed the thing" in m["content"] for m in tool_msgs)
     dele = [e for e in _events(store, res.session_id) if e.get("type") == "delegate"]
