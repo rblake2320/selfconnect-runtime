@@ -211,7 +211,12 @@ def _run_team(cfg, args, target: str, task: str) -> int:
     reg = PackageRegistry(cfg.home, Keystore())
     adapter = _adapter_from_config(cfg, args)
     store = Store(_store_path(cfg.home))
-    runner_sb = SandboxRunner()
+    # tmp_dir: workers need a writable TEMP (the PyInstaller bootloader
+    # extracts there; RUN-D crashed with "Could not create temporary
+    # directory!" because the restricted env had none).
+    sb_tmp = os.path.join(cfg.home, "tmp")
+    os.makedirs(sb_tmp, exist_ok=True)
+    runner_sb = SandboxRunner(tmp_dir=sb_tmp)
 
     loaded = None
     provenance: dict = {}
@@ -523,6 +528,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["__scr_worker__"]:
+        # Frozen-exe worker dispatch: the sandbox re-invokes THIS executable
+        # (sys.executable is scr.exe under PyInstaller); hand off to the worker
+        # before argparse can reject it. See sandbox._worker_cmd.
+        from .worker import main as worker_main
+        return worker_main()
     args = build_parser().parse_args(argv)
     return args.func(args)
 

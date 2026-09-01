@@ -33,6 +33,17 @@ _WINDOWS_ENV_ALLOWLIST = (
 _POSIX_ENV_ALLOWLIST = ("LANG", "LC_ALL", "TZ")
 
 
+def _worker_cmd() -> list[str]:
+    """How to start a worker. RUN-D live finding (frozen exe only): the worker
+    was spawned as `sys.executable -s -m scr.worker`, but under PyInstaller
+    sys.executable is scr.exe — whose CLI would reject those args — and the
+    onefile bootloader could not even extract because the restricted env has
+    no TEMP. Frozen mode uses an explicit dispatch token instead."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "__scr_worker__"]
+    return [sys.executable, "-s", "-m", "scr.worker"]
+
+
 def restricted_env(extra: Optional[dict[str, str]] = None,
                    tmp_dir: Optional[str] = None) -> dict[str, str]:
     """Build the worker environment from scratch: allowlist + computed vars."""
@@ -259,7 +270,7 @@ class SandboxRunner:
         result, or a structured error dict on timeout/crash/garbage output."""
         lim = limits or self.limits
         handle = self.start(
-            [sys.executable, "-s", "-m", "scr.worker"], cwd=cwd,
+            _worker_cmd(), cwd=cwd,
             stdin_data=json.dumps(job_payload).encode("utf-8"), limits=lim,
         )
         self._register(handle)

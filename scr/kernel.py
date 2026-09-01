@@ -323,6 +323,7 @@ class Kernel:
             "idem_key": idem_key, "parallel": True,
             **_arg_path(call.arguments),
         })
+        self._ledger_tool_error(session_id, call.name, result)
         return result
 
     def _run_parallel_batch(self, session_id: str, batch: list[ToolCall]) -> None:
@@ -478,7 +479,20 @@ class Kernel:
             "idem_key": idem_key,
             **_arg_path(call.arguments),
         })
+        self._ledger_tool_error(session_id, call.name, result)
         return result
+
+    def _ledger_tool_error(self, session_id: str, tool: str, result: str) -> None:
+        """RUN-D correction: a tool that executes and RETURNS an error string
+        (e.g. "TOOL ERROR [worker_crash]: ...") looked like a successful
+        tool_exec in the chain — the model truthfully reported crashes the
+        ledger appeared to disprove. Error results are now chain facts."""
+        if isinstance(result, str) and result.startswith("TOOL ERROR ["):
+            klass = result[len("TOOL ERROR ["):].split("]", 1)[0]
+            self.ledger.append(session_id, {
+                "type": "tool_error", "tool": tool, "class": klass,
+                "detail": result[:200],
+            })
 
     def _stop(self, session_id: str, iteration: int, reason: str) -> RunResult:
         self.store.journal_append(session_id, "STOPPED", {"reason": reason})

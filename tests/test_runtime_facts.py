@@ -115,3 +115,58 @@ def test_summary_states_none_when_nothing_was_read(tmp_path):
     res = runner.run("solo", "go")
     # the model's happy prose is followed by the runtime's blunt fact
     assert "files touched: NONE" in res.final_text
+
+
+# ------------------------------------- frozen worker dispatch (RUN D crash)
+def test_worker_cmd_frozen_vs_venv(monkeypatch):
+    import sys as _sys
+    from scr.sandbox import _worker_cmd
+    assert _worker_cmd()[1:] == ["-s", "-m", "scr.worker"]      # venv path
+    monkeypatch.setattr(_sys, "frozen", True, raising=False)
+    assert _worker_cmd() == [_sys.executable, "__scr_worker__"]  # frozen path
+
+
+def test_cli_dispatches_worker_token(monkeypatch):
+    import scr.worker as worker_mod
+    from scr.cli import main
+    monkeypatch.setattr(worker_mod, "main", lambda: 7)
+    assert main(["__scr_worker__"]) == 7
+
+
+def test_restricted_env_carries_temp_for_bootloader(tmp_path):
+    from scr.sandbox import restricted_env
+    env = restricted_env(tmp_dir=str(tmp_path))
+    assert env["TEMP"] == env["TMP"] == env["TMPDIR"] == str(tmp_path)
+    # and without tmp_dir there is intentionally NO TEMP (the RUN-D state)
+    assert "TEMP" not in restricted_env()
+
+
+# --------------------------------------- tool errors become chain facts
+def test_tool_error_result_is_ledgered_and_summarized(tmp_path):
+    agents = {"lead": {"capabilities": CAPS, "delegates": ["worker"]},
+              "worker": {"capabilities": CAPS}}
+    crash = ToolSpec("fs_read", lambda a: "TOOL ERROR [worker_crash]: rc=-1 "
+                     "stderr=[PYI-1:ERROR] Could not create temporary directory!",
+                     idempotent=True,
+                     parameters={"type": "object", "properties": {
+                         "path": {"type": "string"}}, "required": ["path"]})
+    scripts = {
+        "lead": [ModelResponse("", (ToolCall("c", "delegate",
+                 {"agent": "worker", "task": "read"}),)),
+                 ModelResponse("report done")],
+        "worker": [ModelResponse("", (ToolCall("r", "fs_read",
+                   {"path": str(tmp_path)}),)),
+                   ModelResponse("saw an error")],
+    }
+    loaded = load_team_from_dir(_write(tmp_path, agents), str(tmp_path / "ws"))
+    store = Store(":memory:")
+    adapters = {a: MockAdapter(list(s)) for a, s in scripts.items()}
+    runner = TeamRunner(store, loaded, lambda a: adapters[a],
+                        lambda m: {"fs_read": crash})
+    res = runner.run("lead", "go")
+    child_sid = next(m["session_id"] for m in store.team_members(runner.last_team_id)
+                     if m["agent"] == "worker")
+    ev = _events(store, child_sid)
+    te = [e for e in ev if e.get("type") == "tool_error"]
+    assert te and te[0]["class"] == "worker_crash"      # chain fact, not prose
+    assert "ERROR[worker_crash]" in res.final_text       # surfaced in summary

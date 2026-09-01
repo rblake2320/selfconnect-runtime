@@ -185,6 +185,11 @@ def _run_as_service() -> bool:
 
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["__scr_worker__"]:
+        # Frozen-exe worker dispatch (see sandbox._worker_cmd): a kernel run
+        # inside the service spawns workers by re-invoking THIS executable.
+        from .worker import main as worker_main
+        return worker_main()
     # Explicit console subcommand, or non-Windows → console mode.
     if argv[:1] == ["run"] or os.name != "nt":
         return run_console(argv)

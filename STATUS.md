@@ -419,6 +419,36 @@ sessions. Ledger dump: `DELEGATIONS [researcher, researcher, auditor, auditor]`,
 - **RUN D in flight**: all fixes + `--num-ctx 32768` + live `/api/ps` probe;
   checks 2/3 (real file reads, file/line findings) decided by its ledger.
 
+### RUN D live findings (mid-run, from the live WAL store + /api/ps)
+
+- **`/api/ps` CONFIRMS `context_length: 32768`** — the adapter's num_ctx is
+  applied; model loaded clean (23.78 GB VRAM, no vLLM collision). **The "~4k
+  truncation" theory is DISPROVEN as the empty-return cause** (researcher
+  still returned 0 chars at 32k with a valid workspace + caps context).
+- **TRUE root cause, read from the researcher's own session:** every fs tool
+  returned `TOOL ERROR [worker_crash]: rc=-1 stderr=[PYI-...] Could not create
+  temporary directory!`. Two frozen-exe-only defects: (a) the sandbox worker
+  env allowlist carries **no TEMP**, so the PyInstaller onefile bootloader
+  cannot extract; (b) the worker is spawned as `sys.executable -s -m
+  scr.worker` — under freeze `sys.executable` is `scr.exe`, whose CLI would
+  reject those args anyway. Venv tests can never see either. RUN A masked it:
+  the invalid workspace failed calls at capability-check BEFORE spawn; a valid
+  workspace is what finally exercised the frozen spawn path.
+- **RETRACTION (owed to the model):** RUN B's "worker crashes" prose was
+  labeled confabulation because the ledger showed no crash events — but
+  `tool_exec` records result HASHES; the actual `TOOL ERROR [worker_crash]`
+  strings were in the messages the model saw. **The model reported the truth;
+  the ledger reading was shallow.** Confabulation pattern is 2/3, not 3/3
+  ("Auditor Risk Assessment" and the RUN-A empty-handed narrative stand).
+- **Fixes (tested, suite 354 = 347 pass + 7 skip):** worker spawn is
+  frozen-aware (`__scr_worker__` dispatch token handled by scr.exe AND
+  scr-service.exe before argparse); the CLI gives the sandbox a real tmp_dir
+  (`<home>/tmp`) so workers get TEMP; **tool-error results are now chain
+  facts** (`tool_error` event with mechanical class parsing) and the execution
+  summary lists them — the blind spot that caused the false confabulation
+  charge is closed. Frozen rebuild + RUN E queued behind RUN D (exe file
+  locked by the running process).
+
 ## Installer / packaging closure (2026-08-31)
 
 - **`scr-service.exe` — Windows Service host** (`scr/service_main.py`): console

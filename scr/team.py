@@ -271,6 +271,9 @@ def team_execution_summary(store: Store, team_id: str) -> str:
                 tool_counts[e.get("tool", "?")] = tool_counts.get(e.get("tool", "?"), 0) + 1
                 if e.get("path"):
                     files.append(e["path"])
+            elif t == "tool_error":
+                denials.append(f'{e.get("tool")} ERROR[{e.get("class")}]: '
+                               f'{e.get("detail", "")[:60]}')
             elif t == "cap_denied":
                 denials.append(f'{e.get("tool")}: {e.get("reason", "")[:80]}')
             elif t == "policy":
@@ -292,7 +295,7 @@ def team_execution_summary(store: Store, team_id: str) -> str:
         lines.extend(f"  {f}" for f in shown)
     else:
         lines.append("files touched: NONE — no filesystem path was actually read")
-    lines.append(f"capability denials ({len(denials)}): "
+    lines.append(f"denials / tool errors ({len(denials)}): "
                  + ("; ".join(denials[:10]) or "(none)"))
     if empty_returns:
         lines.append(f"empty child returns not counted as completed: {empty_returns}")
