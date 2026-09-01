@@ -312,9 +312,26 @@ lead  (session 3e1bce3b, depth 0)   22 events
   fabricating findings. Harness fixed (quote + forward slashes); a python
   convenience-dump also crashed on an msys path (fixed) — irrelevant, the
   verified bundle's tree is the authoritative source.
+- **RUN A runtime-side finding (owner, G6 fail-fast): `--workspace` accepted a
+  nonexistent directory and the run proceeded to completion with zero file
+  access.** Worse: the CLI's `os.makedirs(workspace/out, exist_ok=True)`
+  silently *created* the mangled directory and ran 20+ minutes against the
+  empty dir it had just made. A run against nothing is a customer support
+  ticket, not a nicety. **Fixed:** an explicit `--workspace` is validated at
+  CLI time — must exist, be a directory, and pass a real read probe
+  (`os.listdir`, since `os.access` lies on Windows) — otherwise exit non-zero
+  BEFORE any session is created, with the resolved absolute path in the error
+  so shell path-mangling is visible instantly. Tests (+2, adversarial):
+  nonexistent workspace → refused, resolved path in message, directory NOT
+  created, zero sessions added; a file as workspace → refused. Suite **341
+  (334 pass + 7 skip)**. The junk directory RUN A created was removed.
+  Frozen `scr.exe`/MSI rebuild with this fix is pending RUN B's completion
+  (Windows locks the running exe).
 - **RUN B (workspace binding, checks 2/3): in flight** on the Spark with the
   corrected `--workspace "C:/dev/selfconnect-runtime"`, to test whether real file
   access yields file/line-specific findings. Result appended when it lands.
+  (RUN B launched from the pre-fix frozen exe; the workspace it was given is
+  valid, so the fail-fast gap does not affect its result.)
 
 ## Installer / packaging closure (2026-08-31)
 

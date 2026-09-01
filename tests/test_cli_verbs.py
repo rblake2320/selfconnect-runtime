@@ -121,3 +121,38 @@ def test_backup_restore_via_cli(tmp_path, capsys):
     capsys.readouterr()
     main(["--home", home, "model", "list"])
     assert "m" in capsys.readouterr().out
+
+
+# ------------------------------------------- G6 fail-fast: --workspace guard
+def test_run_rejects_nonexistent_workspace_before_any_session(tmp_path, capsys):
+    """RUN-A finding: a shell-mangled --workspace pointed at a nonexistent dir
+    and the CLI silently CREATED it and ran 20+ min against nothing. Directive:
+    an explicit --workspace must be an existing readable directory or the run
+    refuses to start — resolved absolute path in the error, exit non-zero,
+    nothing created, no session touched."""
+    home = str(tmp_path / "home")
+    main(["--home", home, "init"])
+    bad = str(tmp_path / "does" / "not" / "exist")
+    with pytest.raises(SystemExit) as exc:
+        main(["--home", home, "run", "--workspace", bad,
+              "sce.security-team", "review"])
+    msg = str(exc.value)
+    assert os.path.abspath(bad) in msg          # resolved path → mangling visible
+    assert "not an existing directory" in msg
+    assert not os.path.exists(bad)              # fail-fast did NOT create it
+    assert not os.path.exists(os.path.join(bad, "out"))
+    # no session side effects (init creates the db; the run must add nothing)
+    from scr.state import Store
+    s = Store(os.path.join(home, "scr.db"))
+    assert s.conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+    s.conn.close()
+
+
+def test_run_rejects_file_as_workspace(tmp_path):
+    home = str(tmp_path / "home")
+    main(["--home", home, "init"])
+    f = tmp_path / "afile.txt"
+    f.write_text("x")
+    with pytest.raises(SystemExit) as exc:
+        main(["--home", home, "run", "--workspace", str(f), "t", "task"])
+    assert "not an existing directory" in str(exc.value)

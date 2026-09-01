@@ -190,8 +190,22 @@ def _run_team(cfg, args, target: str, task: str) -> int:
 
     # ${WORKSPACE} in agent capability roots binds here. Default: SCR home;
     # pass --workspace <path> to point the team at a real target (e.g. a repo).
-    workspace = getattr(args, "workspace", None) or cfg.home
-    workspace = os.path.abspath(workspace)
+    workspace_arg = getattr(args, "workspace", None)
+    workspace = os.path.abspath(workspace_arg or cfg.home)
+    if workspace_arg is not None:
+        # Fail fast (G6): an explicit --workspace must already be a readable
+        # directory — refuse BEFORE any session/store is touched rather than
+        # burn a model run against nothing. The resolved absolute path is in
+        # the error so shell path-mangling is visible instantly.
+        if not os.path.isdir(workspace):
+            raise SystemExit(
+                f"--workspace is not an existing directory: {workspace} "
+                f"(from argument {workspace_arg!r})")
+        try:
+            os.listdir(workspace)  # real read probe; os.access lies on Windows
+        except OSError as exc:
+            raise SystemExit(
+                f"--workspace is not readable: {workspace} ({exc})")
     os.makedirs(os.path.join(workspace, "out"), exist_ok=True)
 
     reg = PackageRegistry(cfg.home, Keystore())
