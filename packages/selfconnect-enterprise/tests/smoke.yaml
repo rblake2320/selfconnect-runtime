@@ -1,6 +1,0 @@
-# Package self-test scenario. `scr package verify` runs this through the kernel
-# against the configured model. Passes when the model's final text contains the
-# expected substring.
-name: smoke-greeting
-prompt: "Reply with a short greeting containing the word ready."
-expect_contains: "ready"

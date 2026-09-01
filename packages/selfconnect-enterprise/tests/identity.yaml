@@ -1,3 +1,0 @@
-name: identity-check
-prompt: "State which runtime executes you in one word."
-expect_contains: "SelfConnect"

@@ -49,7 +49,10 @@ def _canonical(obj) -> bytes:
 
 
 def verify_bundle_obj(bundle: dict, bundle_hmac_hex: str, key: bytes) -> dict:
-    """Full verification. Returns a structured report dict."""
+    """Full verification. Handles a single-session bundle (events[]/seal) and a
+    TEAM bundle (sessions[] + delegation_tree). Returns a structured report."""
+    if "sessions" in bundle:
+        return _verify_team_bundle(bundle, bundle_hmac_hex, key)
     events = bundle.get("events", [])
     chain = recompute_chain(events)
     report = {
@@ -87,7 +90,59 @@ def verify_bundle_obj(bundle: dict, bundle_hmac_hex: str, key: bytes) -> dict:
     return report
 
 
+def _verify_team_bundle(bundle: dict, bundle_hmac_hex: str, key: bytes) -> dict:
+    sessions = bundle.get("sessions", [])
+    tree = bundle.get("delegation_tree", [])
+    per = []
+    all_ok = True
+    for s in sessions:
+        chain = recompute_chain(s.get("events", []))
+        seal = s.get("seal") or {}
+        seal_ok = None
+        if seal:
+            if seal.get("head") == chain["head"] and seal.get("count") == chain["count"]:
+                expect = hmac.new(key, f"{chain['head']}:{chain['count']}".encode("ascii"),
+                                  hashlib.sha256).hexdigest()
+                seal_ok = hmac.compare_digest(expect, seal.get("hmac", ""))
+            else:
+                seal_ok = False
+        ok = chain["ok"] and (seal_ok in (True, None))
+        all_ok = all_ok and ok
+        per.append({"agent": s.get("agent"), "session": s.get("session_id"),
+                    "chain_ok": chain["ok"], "seal_ok": seal_ok,
+                    "count": chain["count"], "error": chain["error"]})
+    expect_bundle = hmac.new(key, _canonical(bundle), hashlib.sha256).hexdigest()
+    bundle_seal_ok = hmac.compare_digest(expect_bundle, bundle_hmac_hex or "")
+    return {
+        "team": True, "team_id": bundle.get("team_id"),
+        "runtime_version": bundle.get("runtime_version"), "package": bundle.get("package"),
+        "delegation_tree": tree, "sessions": per,
+        "bundle_seal_ok": bundle_seal_ok,
+        "ok": all_ok and bundle_seal_ok,
+    }
+
+
 def human_report(report: dict) -> str:
+    if report.get("team"):
+        lines = ["SelfConnect Team Evidence Verification",
+                 "======================================",
+                 f"team:     {report.get('team_id')}",
+                 f"runtime:  {report.get('runtime_version')}",
+                 f"package:  {report.get('package')}",
+                 "delegation tree:"]
+        for n in sorted(report.get("delegation_tree", []), key=lambda x: (x.get("depth", 0), x.get("agent", ""))):
+            indent = "  " * (int(n.get("depth", 0)) + 1)
+            lines.append(f"{indent}{n.get('agent')}  (session {str(n.get('session_id'))[:8]}…, depth {n.get('depth')})")
+        lines.append("sessions:")
+        for s in report.get("sessions", []):
+            status = "OK" if (s["chain_ok"] and s["seal_ok"] in (True, None)) else "FAIL"
+            lines.append(f"  [{status}] {s['agent']}  {s['count']} events"
+                         + ("" if s["chain_ok"] else f" — {s['error']}"))
+        lines.append(f"bundle seal:  {'OK' if report.get('bundle_seal_ok') else 'FAIL'}")
+        lines.append("")
+        lines.append(f"RESULT: {'VERIFIED' if report.get('ok') else 'TAMPERED / INVALID'}")
+        return "\n".join(lines)
+
     lines = [
         "SelfConnect Evidence Verification",
         "=================================",

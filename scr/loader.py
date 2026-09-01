@@ -125,21 +125,32 @@ def run_selftests(path: str, adapter, keystore: Keystore,
         return {"ok": False, "verified": False, "error": v.error, "detail": v.detail,
                 "results": []}
 
+    import tempfile
+
     results = []
     with Package(path) as pkg:
         scenarios = [n for n in pkg.member_names()
                      if n.startswith("tests/") and n.endswith(".yaml")]
         for member in sorted(scenarios):
             spec = yaml.safe_load(pkg.read_member(member).decode("utf-8")) or {}
-            store = Store(":memory:")
-            sid = store.create_session()
-            kernel = Kernel(store, adapter, {},
-                            CapabilityManifest(tools=frozenset()))
-            run = kernel.run(sid, spec.get("prompt", ""))
             want = spec.get("expect_contains", "")
+            store = Store(":memory:")
+            if spec.get("team"):
+                # Exercise the REAL multi-agent team from the package's agents/.
+                from .team import TeamRunner, load_team_from_package
+                with tempfile.TemporaryDirectory() as ws:
+                    os.makedirs(os.path.join(ws, "out"), exist_ok=True)
+                    loaded = load_team_from_package(path, ws)
+                    runner = TeamRunner(store, loaded, lambda a: adapter,
+                                        lambda m: {})
+                    run = runner.run(spec["team"], spec.get("prompt", ""))
+            else:
+                sid = store.create_session()
+                run = Kernel(store, adapter, {}, CapabilityManifest(tools=frozenset())
+                             ).run(sid, spec.get("prompt", ""))
             passed = want in run.final_text
             results.append({"name": spec.get("name", member),
-                            "passed": passed,
+                            "passed": passed, "team": bool(spec.get("team")),
                             "detail": "" if passed else f"missing {want!r} in output"})
             store.close()
     return {"ok": all(r["passed"] for r in results), "verified": True,

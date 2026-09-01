@@ -217,6 +217,31 @@ currently-unproven claim.
 **Tail complete:** every §C divergence (C1–C20) is now closed or explicitly
 residual (C11b OS-level read isolation → AppContainer/Landlock).
 
+## Team dispatch — the last design-vs-implementation gap (§3.1, §3.7)
+
+`scr/team.py`: `scr run <team-or-agent> "<task>"` (bare run stays single-agent;
+unknown name lists available). Topology loaded from a package's agents/,
+**widening / cycles / multiple-parents rejected at load**. A framework
+`delegate` tool spawns each child per topology edge with `capability.attenuate`
+enforced on every edge; each agent runs in its own linked session
+(team_sessions), tasks/results flow through the mailbox, and the ledger records
+one event per delegation edge (parent, child, effective-cap hash) + per mailbox
+delivery. Team crash-safety: `team_recover` classifies each subagent session
+individually (real process-kill → killed child quarantined, completed sibling
+preserved, DB intact); `TeamRunner.cancel()` reaps every subagent process tree
+(cancel storm → zero orphans). Evidence: `export_team_bundle` seals every
+session and bundles the full delegation tree; `verify.py` verifies it offline.
+
+- Suites: `test_team.py` (+9), `test_team_chaos.py` (+2 real kills),
+  `test_team_evidence.py` (+3), `test_content_migration.py` rewritten to run a
+  REAL 3-agent team self-test. **334 tests (327 pass + 7 skip).**
+- **Model tool-call fidelity (real finding):** the `delegate` tool requires a
+  tool-capable model. **gemma3 → "does not support tools" (HTTP 400)** — cannot
+  drive a team; **qwen3.6:27b emits correct `delegate` tool calls** — it can.
+  Single-agent `run` works on gemma3 (no tools sent).
+- **Live team proof:** running `scr run sce.security-team` through the frozen
+  `scr.exe` against the Spark (qwen3.6:27b) — numbers recorded on completion.
+
 ## Installer / packaging closure (2026-08-31)
 
 - **`scr-service.exe` — Windows Service host** (`scr/service_main.py`): console

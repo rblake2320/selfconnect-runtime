@@ -82,6 +82,49 @@ def export_bundle(store: Store, session_id: str, key: bytes, out_path: str,
     return bundle_hmac
 
 
+def build_team_bundle(store: Store, team_id: str,
+                      package: Optional[dict] = None) -> dict:
+    members = store.team_members(team_id)
+    sessions = []
+    for m in members:
+        sid = m["session_id"]
+        sessions.append({
+            "session_id": sid, "agent": m["agent"],
+            "events": _read_session_events(store, sid),
+            "seal": _read_seal(store, sid) or {},
+        })
+    return {
+        "runtime_version": __version__,
+        "package": package or {},
+        "team_id": team_id,
+        "delegation_tree": [
+            {"agent": m["agent"], "session_id": m["session_id"],
+             "parent_session": m["parent_session"], "depth": m["depth"]}
+            for m in members],
+        "sessions": sessions,
+    }
+
+
+def export_team_bundle(store: Store, team_id: str, key: bytes, out_path: str,
+                       package: Optional[dict] = None) -> str:
+    """Export a whole team run (all delegation sessions + the tree) as one
+    self-verifying .scevidence bundle. Seals each session first."""
+    for m in store.team_members(team_id):
+        seal_on_close(store, m["session_id"], key)
+    bundle = build_team_bundle(store, team_id, package)
+    bundle_bytes = _canonical(bundle)
+    bundle_hmac = hmac_mod.new(key, bundle_bytes, hashlib.sha256).hexdigest()
+    verifier_src = _load_verifier_source()
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("bundle.json", bundle_bytes)
+        z.writestr("bundle.hmac", bundle_hmac)
+        z.writestr("verify.py", verifier_src)
+        z.writestr("README.txt",
+                   "Team evidence bundle. Verify offline with only Python stdlib:\n"
+                   "  python verify.py bundle.json --key <hex>\n")
+    return bundle_hmac
+
+
 def _load_verifier_source() -> str:
     """Read the standalone verifier's source to embed in the bundle. Works both
     from the source tree AND from a frozen (PyInstaller) exe, where the source

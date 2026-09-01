@@ -1,0 +1,7 @@
+# Package self-test: exercises the REAL multi-agent team (orchestrator +
+# researcher + auditor), not a single turn. `scr package verify` runs this
+# against the configured model.
+name: security-team-review
+team: sce.security-team
+prompt: "Run the security review on the target repository."
+expect_contains: "security review complete"

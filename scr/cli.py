@@ -251,11 +251,20 @@ def cmd_session_resume(args) -> int:
 
 
 def cmd_session_export(args) -> int:
-    from .evidence import export_bundle, seal_on_close
+    from .evidence import export_bundle, export_team_bundle, seal_on_close
     from .state import Store
     cfg = Config(args.home)
     key = bytes.fromhex(args.key)
     store = Store(_store_path(cfg.home))
+    # If the id names a team (a team_id, or a session that belongs to one),
+    # export the whole delegation tree as one bundle (team export always seals).
+    team_id = args.session if store.team_members(args.session) else \
+        store.team_id_for_session(args.session)
+    if team_id:
+        export_team_bundle(store, team_id, key, args.out)
+        n = len(store.team_members(team_id))
+        print(f"exported TEAM evidence ({n} sessions) for {team_id} to {args.out}")
+        return 0
     if args.seal:
         seal_on_close(store, args.session, key)
     export_bundle(store, args.session, key, args.out)
