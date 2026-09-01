@@ -17,7 +17,9 @@
 
     <!-- Install tree under Program Files\SelfConnect Runtime -->
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="SelfConnect Runtime" />
+      <Directory Id="INSTALLFOLDER" Name="SelfConnect Runtime">
+        <Directory Id="ServiceInternalDir" Name="_internal" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="AppShortcutDir" Name="SelfConnect Runtime" />
@@ -31,9 +33,12 @@
                      Part="last" Action="set" System="yes" Permanent="no" />
       </Component>
 
-      <!-- Core service host, registered as a Windows Service -->
+      <!-- Core service host, registered as a Windows Service.
+           ONEDIR build (RUN-D lesson): the service and its sandbox workers
+           launch from the installed _internal\ tree — no per-spawn onefile
+           extraction, no TEMP dependency for the bootloader. -->
       <Component Id="ScrService" Guid="7A1C0003-0000-4000-8000-53435230534B">
-        <File Id="ScrServiceExe" Source="dist\scr-service.exe" KeyPath="yes" />
+        <File Id="ScrServiceExe" Source="dist\scr-service\scr-service.exe" KeyPath="yes" />
         <ServiceInstall Id="ScrSvcInstall"
                         Name="SelfConnectRuntime"
                         DisplayName="SelfConnect Runtime"
@@ -63,8 +68,16 @@
       </Component>
     </ComponentGroup>
 
+    <!-- Onedir runtime tree for the service (PyInstaller _internal),
+         wildcard-harvested so freeze-layout changes cannot silently drop
+         files from the install. -->
+    <ComponentGroup Id="SCRServiceInternal" Directory="ServiceInternalDir">
+      <Files Include="dist\scr-service\_internal\**" />
+    </ComponentGroup>
+
     <Feature Id="Main" Title="SelfConnect Runtime" Level="1">
       <ComponentGroupRef Id="SCR" />
+      <ComponentGroupRef Id="SCRServiceInternal" />
     </Feature>
   </Package>
 </Wix>

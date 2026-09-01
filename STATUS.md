@@ -448,6 +448,35 @@ sessions. Ledger dump: `DELEGATIONS [researcher, researcher, auditor, auditor]`,
   summary lists them — the blind spot that caused the false confabulation
   charge is closed. Frozen rebuild + RUN E queued behind RUN D (exe file
   locked by the running process).
+- **RUN D disposition:** killed deliberately once BOTH children maxed out on
+  worker_crash (its exe predates the spawn fix; the outcome was predetermined
+  and each retry burned 1–2 min of Spark time). Diagnostic value was already
+  extracted: /api/ps context confirmation, worker_crash root cause, and a live
+  proof of the policy's refusal posture under total tool failure.
+
+### Worker gates + onedir service (owner additions, 2026-09-01)
+
+- **Frozen-worker BUILD GATE** (`scripts/frozen_worker_gate.py`, wired into
+  `build_frozen.sh`): every build ends with the artifact's worker physically
+  executing a real fs_list through the sandbox's EXACT restricted env (Job
+  Object + allowlist + provisioned TEMP); build fails otherwise. **Gate
+  validated against the shipped bug:** run against the pre-fix scr.exe it
+  FAILED with the exact defect visible (`invalid choice: '__scr_worker__'`);
+  against the fixed artifacts it PASSES. The next TEMP-shaped defect cannot
+  ship.
+- **MSI post-build gate** (`build_msi.sh`): `wix build` → unelevated
+  administrative extract (`msiexec /a`) → the INSTALLED-layout workers gated.
+  Guards freeze → wxs harvest → install layout, not just the freeze. PASS.
+- **Service is now ONEDIR** (Package.wxs harvests `_internal\**` via WiX v4+
+  `Files` wildcard): workers launch from the installed tree — no per-spawn
+  onefile extraction, no TEMP dependency, the RUN-D surface removed by
+  construction. Portable `scr.exe` stays onefile. **Measured spawn+exec
+  latency (NVMe box):** onefile 0.64–0.75 s vs onedir 0.56–0.57 s — the
+  extraction tax here is ~0.1–0.2 s/spawn, smaller than feared, but onedir
+  wins and removes the failure surface. MSI now 27.3 MB.
+- **RUN E in flight** — first run with all three legs standing: policy
+  enforced, workspace real, workers physically executing. Its bundle answers
+  the original question (files and lines, or not).
 
 ## Installer / packaging closure (2026-08-31)
 
