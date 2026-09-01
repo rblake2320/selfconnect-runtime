@@ -325,3 +325,33 @@ def test_child_abnormal_stop_yields_explanatory_text(tmp_path):
         "SELECT content FROM messages WHERE role='tool' AND content LIKE ?",
         ('%CHILD STOPPED [model_error]%',)).fetchone()
     assert row is not None
+
+
+# ---------------- owner bug: session list showed nothing for a team home
+def test_session_list_shows_team_sessions(tmp_path, capsys):
+    """`session list` listed only JOBS; team runs create sessions directly, so
+    a team home printed nothing. It must show every session with its team id,
+    agent, depth, status, and start time."""
+    from scr.cli import main
+    home = str(tmp_path / "home")
+    main(["--home", home, "init"])
+    # drive a real (mock-model) team run INTO the home's store
+    agents = {"lead": {"capabilities": CAPS, "delegates": ["worker"]},
+              "worker": {"capabilities": CAPS}}
+    scripts = {"lead": [ModelResponse("", (ToolCall("c", "delegate",
+                        {"agent": "worker", "task": "t"}),)),
+                        ModelResponse("done")],
+               "worker": [ModelResponse("w")]}
+    loaded = load_team_from_dir(_write(tmp_path, agents), str(tmp_path / "ws"))
+    store = Store(os.path.join(home, "scr.db"))
+    adapters = {a: MockAdapter(list(s)) for a, s in scripts.items()}
+    runner = TeamRunner(store, loaded, lambda a: adapters[a], lambda m: {})
+    runner.run("lead", "go")
+    store.conn.close()
+    capsys.readouterr()
+    assert main(["--home", home, "session", "list"]) == 0
+    out = capsys.readouterr().out
+    assert f"team={runner.last_team_id}" in out
+    assert "agent=lead" in out and "depth=0" in out
+    assert "agent=worker" in out and "depth=1" in out
+    assert "started=" in out and "status=" in out

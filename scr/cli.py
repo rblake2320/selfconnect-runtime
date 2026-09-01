@@ -276,11 +276,30 @@ def cmd_run(args) -> int:
 
 
 def cmd_session_list(args) -> int:
+    # Owner bug report (2026-09-01): team runs create sessions directly (no
+    # job rows), so a jobs-only listing printed NOTHING for a team home.
+    # List every session, joined with its team membership when it has one.
+    import datetime
     from .state import Store
     cfg = Config(args.home)
     store = Store(_store_path(cfg.home))
+    rows = store.conn.execute(
+        "SELECT s.id, s.status, s.created_at, t.team_id, t.agent, t.depth "
+        "FROM sessions s LEFT JOIN team_sessions t ON t.session_id = s.id "
+        "ORDER BY s.created_at, t.depth").fetchall()
+    if not rows:
+        print("(no sessions)")
+        return 0
+    for r in rows:
+        started = datetime.datetime.fromtimestamp(
+            r["created_at"]).strftime("%Y-%m-%d %H:%M:%S")
+        team = r["team_id"] or "-"
+        agent = r["agent"] or "-"
+        depth = r["depth"] if r["depth"] is not None else "-"
+        print(f"{r['id']}  team={team}  agent={agent}  depth={depth}  "
+              f"status={r['status']}  started={started}")
     for j in store.jobs_all():
-        print(f"{j['job_id']}  {j['status']}  session={j['session_id']}")
+        print(f"job {j['job_id']}  {j['status']}  session={j['session_id']}")
     return 0
 
 
