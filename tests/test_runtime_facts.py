@@ -355,3 +355,48 @@ def test_session_list_shows_team_sessions(tmp_path, capsys):
     assert "agent=lead" in out and "depth=0" in out
     assert "agent=worker" in out and "depth=1" in out
     assert "started=" in out and "status=" in out
+
+
+# -------------- owner finding: review must never write into the target
+def test_output_binding_keeps_workspace_read_only(tmp_path):
+    """RUN E/F: the team wrote its report INTO the reviewed repo. ${OUTPUT}
+    binds write roots to the run home's output dir; the workspace root is
+    absent from the effective write roots."""
+    agents = {"lead": {"capabilities": {
+        "tools": ["fs_read", "fs_write"],
+        "fs_read_roots": ["${WORKSPACE}"],
+        "fs_write_roots": ["${OUTPUT}"]}}}
+    ws = str(tmp_path / "customer-repo"); os.makedirs(ws)
+    out = str(tmp_path / "home" / "out"); os.makedirs(out)
+    loaded = load_team_from_dir(_write(tmp_path, agents), ws, out)
+    m = loaded.specs["lead"].manifest
+    assert m.fs_write_roots == (out,)          # deliverables → run home
+    assert ws in m.fs_read_roots               # target readable
+    assert all(not r.startswith(ws) for r in m.fs_write_roots)
+
+
+def test_output_placeholder_without_output_dir_fails_fast(tmp_path):
+    import pytest as _pytest
+    from scr.team import TeamLoadError
+    agents = {"lead": {"capabilities": {"tools": ["fs_write"],
+                                        "fs_write_roots": ["${OUTPUT}"]}}}
+    with _pytest.raises(TeamLoadError, match="OUTPUT"):
+        load_team_from_dir(_write(tmp_path, agents), str(tmp_path / "ws"))
+
+
+def test_cli_run_does_not_mutate_workspace(tmp_path):
+    """The old CLI created <workspace>/out at startup — mutating the
+    customer's repo before the model did anything. A run attempt must leave
+    the workspace byte-for-byte untouched."""
+    import pytest as _pytest
+    from scr.cli import main
+    home = str(tmp_path / "home")
+    main(["--home", home, "init"])
+    ws = tmp_path / "customer-repo"; ws.mkdir()
+    (ws / "code.py").write_text("x = 1\n")
+    before = sorted(os.listdir(ws))
+    with _pytest.raises(SystemExit):           # no packages → unknown team
+        main(["--home", home, "run", "--workspace", str(ws), "team", "task"])
+    assert sorted(os.listdir(ws)) == before    # NOTHING created in the target
+    assert not (ws / "out").exists()
+    assert os.path.isdir(os.path.join(home, "out"))   # output lives at home

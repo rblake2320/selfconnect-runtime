@@ -139,8 +139,9 @@ def run_selftests(path: str, adapter, keystore: Keystore,
                 # Exercise the REAL multi-agent team from the package's agents/.
                 from .team import TeamRunner, load_team_from_package
                 with tempfile.TemporaryDirectory() as ws:
-                    os.makedirs(os.path.join(ws, "out"), exist_ok=True)
-                    loaded = load_team_from_package(path, ws)
+                    out_dir = os.path.join(ws, "scr-selftest-out")
+                    os.makedirs(out_dir, exist_ok=True)
+                    loaded = load_team_from_package(path, ws, out_dir)
                     runner = TeamRunner(store, loaded, lambda a: adapter,
                                         lambda m: {})
                     run = runner.run(spec["team"], spec.get("prompt", ""))

@@ -65,7 +65,7 @@ def main() -> int:
         ok, dt, detail = gate(exe)
         tag = "PASS" if ok else "FAIL"
         print(f"[{tag}] worker gate {os.path.basename(exe)}: "
-              f"spawn+exec {dt:.2f}s — {detail}")
+              f"spawn+exec {dt:.2f}s - {detail}")
         failed = failed or not ok
     return 1 if failed else 0
 

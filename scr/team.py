@@ -71,9 +71,26 @@ class LoadedTeam:
 
 
 # ------------------------------------------------------------------ loading
-def _manifest_from_caps(caps: dict, workspace: str) -> CapabilityManifest:
+def _sub(text: str, workspace: str, output) -> str:
+    """Bind ${WORKSPACE} (the REVIEW TARGET — read-only by default) and
+    ${OUTPUT} (the run home's output dir — where deliverables go). Owner
+    finding (RUN E/F): the team wrote its report INTO the reviewed repo; a
+    review must never mutate the customer's target. A package may still
+    explicitly declare a ${WORKSPACE} write root — that is a deliberate,
+    visible, signed choice."""
+    text = text.replace("${WORKSPACE}", workspace)
+    if "${OUTPUT}" in text:
+        if not output:
+            raise TeamLoadError(
+                "package references ${OUTPUT} but no output dir was supplied")
+        text = text.replace("${OUTPUT}", output)
+    return text
+
+
+def _manifest_from_caps(caps: dict, workspace: str,
+                        output=None) -> CapabilityManifest:
     def roots(key):
-        return tuple(str(r).replace("${WORKSPACE}", workspace)
+        return tuple(_sub(str(r), workspace, output)
                      for r in (caps.get(key) or []))
     exec_rules = tuple(ExecRule(r["binary"], r.get("arg_pattern", r".*"))
                        for r in (caps.get("exec_rules") or []))
@@ -88,15 +105,18 @@ def _manifest_from_caps(caps: dict, workspace: str) -> CapabilityManifest:
     )
 
 
-def _parse_agents(agent_docs: list[dict], workspace: str) -> dict[str, AgentSpec]:
+def _parse_agents(agent_docs: list[dict], workspace: str,
+                  output=None) -> dict[str, AgentSpec]:
     specs: dict[str, AgentSpec] = {}
     for d in agent_docs:
         name = d["name"]
         specs[name] = AgentSpec(
             name=name, role=d.get("role", ""),
-            system_prompt=(d.get("system_prompt") or f"You are the {name} agent.")
-            .strip().replace("${WORKSPACE}", workspace),
-            manifest=_manifest_from_caps(d.get("capabilities") or {}, workspace),
+            system_prompt=_sub(
+                (d.get("system_prompt") or f"You are the {name} agent.").strip(),
+                workspace, output),
+            manifest=_manifest_from_caps(d.get("capabilities") or {}, workspace,
+                                         output),
             delegates=tuple(d.get("delegates") or ()),
             policy=dict(d.get("delegation_policy") or {}),
         )
@@ -170,7 +190,8 @@ def _reject_widening(parent: str, child: str, pm: CapabilityManifest,
                 f"{child!r} widens {label} beyond parent {parent!r}")
 
 
-def load_team_from_dir(src_dir: str, workspace: str) -> LoadedTeam:
+def load_team_from_dir(src_dir: str, workspace: str,
+                       output=None) -> LoadedTeam:
     agents_dir = os.path.join(src_dir, "agents")
     docs = []
     for name in sorted(os.listdir(agents_dir)):
@@ -182,10 +203,11 @@ def load_team_from_dir(src_dir: str, workspace: str) -> LoadedTeam:
     if os.path.exists(team_file):
         with open(team_file, "r", encoding="utf-8") as f:
             aliases = (yaml.safe_load(f) or {}).get("teams", {}) or {}
-    return _build_loaded(docs, aliases, workspace)
+    return _build_loaded(docs, aliases, workspace, output)
 
 
-def load_team_from_package(package_path: str, workspace: str) -> LoadedTeam:
+def load_team_from_package(package_path: str, workspace: str,
+                           output=None) -> LoadedTeam:
     from .package import Package
     docs, aliases = [], {}
     with Package(package_path) as pkg:
@@ -194,13 +216,14 @@ def load_team_from_package(package_path: str, workspace: str) -> LoadedTeam:
                 docs.append(yaml.safe_load(pkg.read_member(member).decode("utf-8")))
             elif member == "team.yaml":
                 aliases = (yaml.safe_load(pkg.read_member(member).decode("utf-8")) or {}).get("teams", {}) or {}
-    return _build_loaded(docs, aliases, workspace)
+    return _build_loaded(docs, aliases, workspace, output)
 
 
-def _build_loaded(docs: list[dict], aliases: dict, workspace: str) -> LoadedTeam:
+def _build_loaded(docs: list[dict], aliases: dict, workspace: str,
+                  output=None) -> LoadedTeam:
     if not docs:
         raise TeamLoadError("package declares no agents/")
-    specs = _parse_agents(docs, workspace)
+    specs = _parse_agents(docs, workspace, output)
     root, edges = _validate_topology(specs)
     team = Team(root=AgentNode(root, specs[root].manifest))
     for parent, kids in edges.items():

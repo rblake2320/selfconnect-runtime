@@ -132,7 +132,7 @@ def human_report(report: dict) -> str:
                  "delegation tree:"]
         for n in sorted(report.get("delegation_tree", []), key=lambda x: (x.get("depth", 0), x.get("agent", ""))):
             indent = "  " * (int(n.get("depth", 0)) + 1)
-            lines.append(f"{indent}{n.get('agent')}  (session {str(n.get('session_id'))[:8]}…, depth {n.get('depth')})")
+            lines.append(f"{indent}{n.get('agent')}  (session {str(n.get('session_id'))[:8]}.., depth {n.get('depth')})")
         lines.append("sessions:")
         for s in report.get("sessions", []):
             status = "OK" if (s["chain_ok"] and s["seal_ok"] in (True, None)) else "FAIL"

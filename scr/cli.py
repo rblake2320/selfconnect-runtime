@@ -206,7 +206,13 @@ def _run_team(cfg, args, target: str, task: str) -> int:
         except OSError as exc:
             raise SystemExit(
                 f"--workspace is not readable: {workspace} ({exc})")
-    os.makedirs(os.path.join(workspace, "out"), exist_ok=True)
+    # Owner finding (RUN E/F): outputs must NEVER go into the review target —
+    # the old code even created <workspace>/out at startup, mutating the
+    # customer's repo before the model did anything. Deliverables bind to
+    # ${OUTPUT} in the RUN HOME; the workspace is read-only unless the signed
+    # package explicitly declares a ${WORKSPACE} write root.
+    output_dir = os.path.join(cfg.home, "out")
+    os.makedirs(output_dir, exist_ok=True)
 
     reg = PackageRegistry(cfg.home, Keystore())
     adapter = _adapter_from_config(cfg, args)
@@ -223,7 +229,7 @@ def _run_team(cfg, args, target: str, task: str) -> int:
     available: dict[str, list[str]] = {}
     for pkg in reg.list_installed():
         try:
-            lt = load_team_from_package(pkg.path, workspace)
+            lt = load_team_from_package(pkg.path, workspace, output_dir)
         except TeamLoadError:
             continue
         available[pkg.name] = sorted(lt.specs) + [f"team:{a}" for a in lt.aliases]
@@ -248,7 +254,9 @@ def _run_team(cfg, args, target: str, task: str) -> int:
                          lambda m: build_native_tools(m, runner_sb),
                          sandbox=runner_sb, on_event=progress,
                          provenance=provenance)
-    print(f"workspace: {workspace}", file=_sys.stderr, flush=True)
+    print(f"workspace: {workspace} (read-only unless the package declares "
+          f"a write root)", file=_sys.stderr, flush=True)
+    print(f"output:    {output_dir}", file=_sys.stderr, flush=True)
     result = trunner.run(target, task)
     print(f"team {target} [{result.stopped_reason}] session {result.session_id} "
           f"(team {trunner.last_team_id})")

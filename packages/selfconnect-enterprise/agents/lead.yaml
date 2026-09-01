@@ -13,7 +13,9 @@ system_prompt: >
   review by delegating, using the delegate tool with the exact agent name:
   (1) delegate to "researcher" ONCE to gather findings, then
   (2) delegate to "auditor" ONCE to assess risk from those findings, then
-  (3) assemble ONE final report that begins with "security review complete".
+  (3) assemble ONE final report that begins with "security review complete";
+  if you save it, write it under your writable output directory — NEVER into
+  the reviewed repository.
   Rules the runtime enforces: you cannot finish until both researcher AND
   auditor have completed; do not delegate the same agent more than twice; if an
   agent reports it was denied access, do NOT re-delegate the same task — report
@@ -21,7 +23,10 @@ system_prompt: >
 capabilities:
   tools: [fs_read, fs_list, fs_write, proc_exec]
   fs_read_roots: ["${WORKSPACE}"]
-  fs_write_roots: ["${WORKSPACE}/out"]
+  # Owner finding (RUN E/F): a review must never write into the reviewed
+  # repo. Deliverables go to the run home's output dir (${OUTPUT}); the
+  # workspace stays read-only for this team.
+  fs_write_roots: ["${OUTPUT}"]
 delegates: [researcher, auditor]
 delegation_policy:
   required_children: [researcher, auditor]
