@@ -116,6 +116,29 @@ def build_native_tools(manifest: CapabilityManifest,
             {"op": "proc_exec", "binary": binary, "args": argv, "cwd": cwd},
             cwd=cwd))
 
+    def compliance_map(args: dict[str, Any]) -> str:
+        """Layer #1 (Provenance/Sentinel): map an SCR evidence bundle's ledger
+        to compliance controls and write a report. Capability-gated: the bundle
+        must be under a readable root and the output under a writable root."""
+        err = _missing(args, "bundle", "out")
+        if err:
+            return err
+        from . import compliance
+        try:
+            bundle = manifest.check_read(args["bundle"])
+            out = manifest.check_write(args["out"])
+        except CapabilityDenied as e:
+            return _denied(e)
+        try:
+            res = compliance.map_bundle(bundle)
+        except (OSError, KeyError, ValueError, __import__("zipfile").BadZipFile) as e:
+            return f"TOOL ERROR [compliance_map]: {type(e).__name__}: {e}"
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(compliance.render_markdown(res))
+        return (f"compliance mapping complete: {res['controls_satisfied']}/"
+                f"{res['controls_total']} controls satisfied across "
+                f"{len(res['frameworks'])} frameworks; report written to {out}")
+
     def _obj(props: dict[str, Any], required: list[str]) -> dict[str, Any]:
         return {"type": "object", "properties": props, "required": required}
 
@@ -143,4 +166,10 @@ def build_native_tools(manifest: CapabilityManifest,
                                                "args": {"type": "array",
                                                         "items": {"type": "string"}}},
                                               ["binary"])),
+        "compliance_map": ToolSpec(
+            "compliance_map", compliance_map, idempotent=True,
+            description="Map an SCR evidence bundle's ledger to NIST/ISO/EU-AI-Act "
+                        "compliance controls and write a report.",
+            parameters=_obj({"bundle": {"type": "string"},
+                             "out": {"type": "string"}}, ["bundle", "out"])),
     }

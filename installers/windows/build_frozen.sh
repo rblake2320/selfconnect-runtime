@@ -18,14 +18,18 @@ cd "$ROOT"
 PY=.venv/Scripts/python.exe
 DIST=installers/windows/dist
 
-# The evidence verifier ships as package data — a frozen exe has no source
-# tree to read it from (bug caught live 2026-08-31; absolute path + --clean).
-ADD_DATA="$(cygpath -w "$ROOT")\\scr\\_evidence_verifier.py;scr"
+# Data files a frozen exe has no source tree to read: the evidence verifier
+# (bug caught live 2026-08-31) and the compliance control catalogs (layer #1).
+# Absolute source paths + --clean.
+W="$(cygpath -w "$ROOT")"
+ADD_VERIFIER="$W\\scr\\_evidence_verifier.py;scr"
+ADD_FRAMEWORKS="$W\\scr\\frameworks\\data;scr/frameworks/data"
 
 "$PY" -m PyInstaller --onefile --clean --noconfirm --distpath "$DIST" \
-    --name scr --add-data "$ADD_DATA" installers/windows/freeze/entry_scr.py
+    --name scr --add-data "$ADD_VERIFIER" --add-data "$ADD_FRAMEWORKS" \
+    installers/windows/freeze/entry_scr.py
 "$PY" -m PyInstaller --onedir --clean --noconfirm --distpath "$DIST" \
-    --name scr-service --add-data "$ADD_DATA" \
+    --name scr-service --add-data "$ADD_VERIFIER" --add-data "$ADD_FRAMEWORKS" \
     installers/windows/freeze/entry_scr_service.py
 
 "$PY" scripts/build_enterprise_pkg.py "$DIST"

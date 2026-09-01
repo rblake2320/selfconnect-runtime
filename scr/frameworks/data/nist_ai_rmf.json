@@ -1,0 +1,86 @@
+{
+  "framework_id": "nist-ai-rmf-1.0",
+  "name": "NIST AI Risk Management Framework 1.0",
+  "version": "1.0",
+  "authority": "NIST",
+  "url": "https://www.nist.gov/itl/ai-risk-management-framework",
+  "controls": [
+    {
+      "id": "GOVERN-1.1",
+      "name": "Legal and Regulatory Requirements",
+      "family": "Govern",
+      "objective": "Understand and document legal and regulatory requirements.",
+      "provenance_mapping": {
+        "evidence_sources": ["framework.coverage"],
+        "required_signals": ["coverage mapped to NIST 800-53, ISO 42001, EU AI Act"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "GOVERN-1.4",
+      "name": "Risk Management Process",
+      "family": "Govern",
+      "objective": "Establish risk management process integrated with broader enterprise risk.",
+      "provenance_mapping": {
+        "evidence_sources": ["monitors.drift_alerts"],
+        "required_signals": ["alerts triaged with severity"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "MAP-2.1",
+      "name": "AI System Categorization",
+      "family": "Map",
+      "objective": "Categorize AI system by use, purpose, risk level.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.classification", "policy.classification_envelope"],
+        "required_signals": ["classification recorded per action"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "MEASURE-2.5",
+      "name": "Trustworthiness Characteristic — Safety",
+      "family": "Measure",
+      "objective": "Evaluate AI system for safety.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs", "control_plane.state"],
+        "required_signals": ["safety tests pass", "kill_all available"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "MEASURE-2.6",
+      "name": "Trustworthiness — Security and Resilience",
+      "family": "Measure",
+      "objective": "Evaluate security and resilience.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs", "transport.mTLS"],
+        "required_signals": ["adversarial coverage", "transport hardened"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "MANAGE-2.3",
+      "name": "Incident Response and Recovery",
+      "family": "Manage",
+      "objective": "Document procedures to respond to and recover from AI incidents.",
+      "provenance_mapping": {
+        "evidence_sources": ["control_plane.last_operator_action"],
+        "required_signals": ["operator actions logged with reason"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "MANAGE-4.1",
+      "name": "Post-Deployment Monitoring",
+      "family": "Manage",
+      "objective": "Continuously monitor performance and risks after deployment.",
+      "provenance_mapping": {
+        "evidence_sources": ["monitors.drift_alerts", "ledger.ingest_lag_ms"],
+        "required_signals": ["live monitor present"],
+        "preventive_control": false
+      }
+    }
+  ]
+}

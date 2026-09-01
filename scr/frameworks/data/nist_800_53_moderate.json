@@ -1,0 +1,262 @@
+{
+  "framework_id": "nist-800-53-r5-moderate",
+  "name": "NIST SP 800-53 Rev 5 — Moderate Baseline",
+  "version": "Rev 5",
+  "authority": "NIST",
+  "url": "https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final",
+  "controls": [
+    {
+      "id": "AC-2",
+      "name": "Account Management",
+      "family": "Access Control",
+      "objective": "Manage information system accounts including identifying account types and approving access.",
+      "provenance_mapping": {
+        "evidence_sources": ["operator_queue.resolved", "ledger.action=spawn", "ledger.action=kill"],
+        "required_signals": ["operator_approval_id is set for privileged spawn", "kill decisions logged"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AC-3",
+      "name": "Access Enforcement",
+      "family": "Access Control",
+      "objective": "Enforce approved authorizations for logical access to information and system resources.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.policy_decision", "policy.bundle.current"],
+        "required_signals": ["every tool_invoke has policy_decision != null", "deny rate non-zero proves enforcement"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AC-4",
+      "name": "Information Flow Enforcement",
+      "family": "Access Control",
+      "objective": "Enforce approved authorizations for controlling the flow of information.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.classification", "ledger.caveats", "policy.caveat_allowlist"],
+        "required_signals": ["no entry exceeds policy classification envelope", "no entry uses caveat outside allowlist"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AC-6",
+      "name": "Least Privilege",
+      "family": "Access Control",
+      "objective": "Employ the principle of least privilege.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.policy_decision=deny", "policy.rule_count"],
+        "required_signals": ["denies present in window prove default-deny posture"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AU-2",
+      "name": "Event Logging",
+      "family": "Audit & Accountability",
+      "objective": "Identify the types of events that the system is capable of logging.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.segments"],
+        "required_signals": ["all action types observed in coverage period"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "AU-3",
+      "name": "Content of Audit Records",
+      "family": "Audit & Accountability",
+      "objective": "Audit records contain information that establishes what type of event occurred, when, where, source, outcome, and identity.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entries"],
+        "required_signals": ["all required LedgerEntry fields present per schema"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "AU-9",
+      "name": "Protection of Audit Information",
+      "family": "Audit & Accountability",
+      "objective": "Protect audit records and audit logging tools from unauthorized access, modification, deletion.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.segment.signature", "identity.public_key_pem"],
+        "required_signals": ["every segment signature verifies against pinned Enterprise pubkey", "entry_hash chain unbroken"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AU-10",
+      "name": "Non-Repudiation",
+      "family": "Audit & Accountability",
+      "objective": "Protect against an individual falsely denying having performed an action.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entry.agent_identity_pubkey_sha384", "ledger.entry.entry_hash"],
+        "required_signals": ["agent identity bound to each entry", "ECDSA P-384 hardware-backed key"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AU-12",
+      "name": "Audit Record Generation",
+      "family": "Audit & Accountability",
+      "objective": "Provide audit record generation capability for the events defined in AU-2.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.ingest_lag_ms", "ledger.segments"],
+        "required_signals": ["continuous segment production", "ingest_lag_ms < 60000"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "CM-2",
+      "name": "Baseline Configuration",
+      "family": "Configuration Management",
+      "objective": "Develop, document, and maintain a baseline configuration.",
+      "provenance_mapping": {
+        "evidence_sources": ["policy.bundle.current", "policy.bundles"],
+        "required_signals": ["current policy bundle signed and pinned", "bundle history present"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "CM-3",
+      "name": "Configuration Change Control",
+      "family": "Configuration Management",
+      "objective": "Determine and document changes to the system.",
+      "provenance_mapping": {
+        "evidence_sources": ["policy.bundles"],
+        "required_signals": ["bundle rotations logged with before/after SHA-384"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "CM-7",
+      "name": "Least Functionality",
+      "family": "Configuration Management",
+      "objective": "Configure the system to provide only essential capabilities.",
+      "provenance_mapping": {
+        "evidence_sources": ["policy.caveat_allowlist", "policy.classification_envelope"],
+        "required_signals": ["allowlist tight (count documented)"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "IA-2",
+      "name": "Identification and Authentication (Org. Users)",
+      "family": "Identification & Authentication",
+      "objective": "Uniquely identify and authenticate users.",
+      "provenance_mapping": {
+        "evidence_sources": ["operator_queue.resolved"],
+        "required_signals": ["operator_id present on every approval"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "IA-3",
+      "name": "Device Identification and Authentication",
+      "family": "Identification & Authentication",
+      "objective": "Uniquely identify devices before establishing connection.",
+      "provenance_mapping": {
+        "evidence_sources": ["identity.public_key_pem"],
+        "required_signals": ["mTLS cert pinned for Enterprise"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "IA-9",
+      "name": "Service Identification and Authentication",
+      "family": "Identification & Authentication",
+      "objective": "Identify and authenticate services.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entry.agent_identity_pubkey_sha384"],
+        "required_signals": ["every agent has hardware-backed P-384 identity"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "IR-4",
+      "name": "Incident Handling",
+      "family": "Incident Response",
+      "objective": "Implement an incident handling capability.",
+      "provenance_mapping": {
+        "evidence_sources": ["control_plane.state", "control_plane.last_operator_action"],
+        "required_signals": ["quarantine/kill_all actions logged with reason"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "RA-5",
+      "name": "Vulnerability Monitoring and Scanning",
+      "family": "Risk Assessment",
+      "objective": "Monitor and scan for vulnerabilities.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs"],
+        "required_signals": ["adversarial run in last 30 days", "verdict=GO"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "SA-11",
+      "name": "Developer Testing and Evaluation",
+      "family": "System & Services Acquisition",
+      "objective": "Require developer to perform testing and evaluation.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs"],
+        "required_signals": ["tests_passed == tests_total", "coverage_pct >= 85"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "SC-8",
+      "name": "Transmission Confidentiality and Integrity",
+      "family": "System & Communications Protection",
+      "objective": "Protect confidentiality and integrity of transmitted information.",
+      "provenance_mapping": {
+        "evidence_sources": ["transport.mTLS", "ledger.segment.signature"],
+        "required_signals": ["mTLS enforced", "segments signed"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "SC-12",
+      "name": "Cryptographic Key Establishment and Management",
+      "family": "System & Communications Protection",
+      "objective": "Establish and manage cryptographic keys.",
+      "provenance_mapping": {
+        "evidence_sources": ["identity.key_algorithm"],
+        "required_signals": ["ECDSA P-384 with SHA-384"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "SC-13",
+      "name": "Cryptographic Protection",
+      "family": "System & Communications Protection",
+      "objective": "Implement cryptographic mechanisms.",
+      "provenance_mapping": {
+        "evidence_sources": ["identity.key_algorithm", "identity.hash_algorithm"],
+        "required_signals": ["FIPS-validated algorithms"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "SI-4",
+      "name": "System Monitoring",
+      "family": "System & Information Integrity",
+      "objective": "Monitor the system to detect attacks and indicators of potential attacks.",
+      "provenance_mapping": {
+        "evidence_sources": ["monitors.drift_alerts"],
+        "required_signals": ["monitor active", "alerts triaged"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "SI-7",
+      "name": "Software, Firmware, and Information Integrity",
+      "family": "System & Information Integrity",
+      "objective": "Employ integrity verification tools.",
+      "provenance_mapping": {
+        "evidence_sources": ["policy.bundle.signature", "ledger.entry_hash chain"],
+        "required_signals": ["chain unbroken", "all signatures verify"],
+        "preventive_control": true
+      }
+    }
+  ]
+}

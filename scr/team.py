@@ -57,8 +57,24 @@ class AgentSpec:
 @dataclass
 class LoadedTeam:
     specs: dict[str, AgentSpec]
-    team: Team
-    aliases: dict[str, str] = field(default_factory=dict)   # alias -> entry agent
+    teams: dict[str, Team]                                  # root agent name -> Team
+    team_of: dict[str, str] = field(default_factory=dict)   # any agent -> its root
+    aliases: dict[str, str] = field(default_factory=dict)   # alias -> root agent
+
+    @property
+    def team(self) -> Team:
+        # Backward-compatible single-team accessor (raises if the package
+        # declares more than one team — callers must use team_for()).
+        if len(self.teams) == 1:
+            return next(iter(self.teams.values()))
+        raise TeamLoadError(
+            f"package declares {len(self.teams)} teams; use team_for(entry)")
+
+    def team_for(self, name: str) -> Team:
+        root = self.team_of.get(name)
+        if root is None:
+            raise TeamLoadError(f"{name!r} belongs to no loaded team")
+        return self.teams[root]
 
     def entry_for(self, name: str) -> str:
         if name in self.aliases:
@@ -123,16 +139,19 @@ def _parse_agents(agent_docs: list[dict], workspace: str,
     return specs
 
 
-def _validate_topology(specs: dict[str, AgentSpec]) -> tuple[str, dict]:
-    """Return (root, edges). Rejects unknown delegates, multiple parents,
-    cycles, and any child that WIDENS beyond its parent."""
+def _validate_forest(specs: dict[str, AgentSpec],
+                     declared_roots: list[str]) -> dict[str, list[str]]:
+    """Validate one or MORE teams (a forest). Each declared root's reachable
+    subtree must be a valid single-root tree; trees are disjoint; every agent
+    belongs to exactly one team. Rejects unknown delegates, multiple parents,
+    cycles, widening, and policies referencing undeclared children.
+    Returns the global edges map. `declared_roots` empty → derive the single
+    natural root (backward compatible with a bare agents/ dir)."""
     edges = {n: list(s.delegates) for n, s in specs.items()}
-    # unknown delegate target
     for parent, kids in edges.items():
         for k in kids:
             if k not in specs:
                 raise TeamLoadError(f"{parent!r} delegates to unknown agent {k!r}")
-    # single parent
     parent_of: dict[str, str] = {}
     for parent, kids in edges.items():
         for k in kids:
@@ -140,34 +159,52 @@ def _validate_topology(specs: dict[str, AgentSpec]) -> tuple[str, dict]:
                 raise TeamLoadError(f"{k!r} has multiple parents "
                                     f"({parent_of[k]!r}, {parent!r})")
             parent_of[k] = parent
-    roots = [n for n in specs if n not in parent_of]
-    if len(roots) != 1:
-        raise TeamLoadError(f"team must have exactly one root orchestrator; found {roots}")
-    root = roots[0]
-    # cycle detection (DFS)
-    seen, stack = set(), [root]
-    order = []
-    while stack:
-        n = stack.pop()
-        if n in seen:
-            raise TeamLoadError(f"cycle in delegation topology at {n!r}")
-        seen.add(n); order.append(n)
-        stack.extend(edges.get(n, []))
-    if len(seen) != len(specs):
-        raise TeamLoadError("topology is not a single connected tree")
-    # no-widening: every child's declared caps ⊆ its parent's declared caps
+    natural_roots = [n for n in specs if n not in parent_of]
+
+    if not declared_roots:
+        if len(natural_roots) != 1:
+            raise TeamLoadError(
+                f"no team.yaml teams declared and agents form {len(natural_roots)} "
+                f"trees {natural_roots}; declare a `teams:` map to name each")
+        declared_roots = natural_roots
+
+    for r in declared_roots:
+        if r not in specs:
+            raise TeamLoadError(f"declared team root {r!r} is not an agent")
+        if r in parent_of:
+            raise TeamLoadError(
+                f"declared team root {r!r} is delegated to by {parent_of[r]!r} — "
+                f"a team root cannot be another team's child")
+
+    # Each declared root owns a disjoint reachable subtree covering all agents.
+    owner: dict[str, str] = {}
+    for root in declared_roots:
+        seen, stack = set(), [root]
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                raise TeamLoadError(f"cycle in delegation topology at {n!r}")
+            if n in owner:
+                raise TeamLoadError(
+                    f"{n!r} is reachable from two teams ({owner[n]!r}, {root!r})")
+            seen.add(n); owner[n] = root
+            stack.extend(edges.get(n, []))
+    uncovered = [n for n in specs if n not in owner]
+    if uncovered:
+        raise TeamLoadError(
+            f"agents not reachable from any declared team: {sorted(uncovered)}")
+
     for parent, kids in edges.items():
         pm = specs[parent].manifest
         for k in kids:
             _reject_widening(parent, k, pm, specs[k].manifest)
-    # delegation policy must only reference DECLARED delegates of that agent
     for name, spec in specs.items():
         for ref in (spec.policy.get("required_children") or []):
             if ref not in edges.get(name, []):
                 raise TeamLoadError(
                     f"{name!r} delegation policy requires undeclared child {ref!r} "
                     f"(declared delegates: {edges.get(name, [])})")
-    return root, edges
+    return edges
 
 
 def _reject_widening(parent: str, child: str, pm: CapabilityManifest,
@@ -224,12 +261,28 @@ def _build_loaded(docs: list[dict], aliases: dict, workspace: str,
     if not docs:
         raise TeamLoadError("package declares no agents/")
     specs = _parse_agents(docs, workspace, output)
-    root, edges = _validate_topology(specs)
-    team = Team(root=AgentNode(root, specs[root].manifest))
-    for parent, kids in edges.items():
-        for k in kids:
-            team.add(parent, AgentNode(k, specs[k].manifest))
-    return LoadedTeam(specs=specs, team=team, aliases=aliases)
+    # A team.yaml `teams:` map names each team by its root agent; without it,
+    # a single natural root is derived (bare agents/ dir).
+    declared_roots = sorted(set(aliases.values()))
+    edges = _validate_forest(specs, declared_roots)
+
+    # Reconstruct per-team reachable sets and build one Team object per root.
+    roots = declared_roots or [n for n in specs
+                               if n not in {c for ks in edges.values() for c in ks}]
+    teams: dict[str, Team] = {}
+    team_of: dict[str, str] = {}
+    for root in roots:
+        team = Team(root=AgentNode(root, specs[root].manifest))
+        # BFS this root's subtree, adding nodes parent-before-child.
+        queue = [root]
+        while queue:
+            parent = queue.pop(0)
+            team_of[parent] = root
+            for k in edges.get(parent, []):
+                team.add(parent, AgentNode(k, specs[k].manifest))
+                queue.append(k)
+        teams[root] = team
+    return LoadedTeam(specs=specs, teams=teams, team_of=team_of, aliases=aliases)
 
 
 # --------------------------------------------------------------- execution
@@ -350,7 +403,7 @@ class TeamRunner:
         self.provenance = dict(provenance or {})
 
     def revoke(self, agent: str) -> None:
-        self.loaded.team.revoke(agent)
+        self.loaded.team_for(agent).revoke(agent)
 
     def cancel(self) -> None:
         """G5 at team scope: stop the whole team cooperatively AND kill every
@@ -362,11 +415,12 @@ class TeamRunner:
     def run(self, entry_name: str, task: str, team_id: Optional[str] = None,
             parent_session: Optional[str] = None, depth: int = 0) -> RunResult:
         entry = self.loaded.entry_for(entry_name)
+        team = self.loaded.team_for(entry)   # the specific team this agent is in
         team_id = team_id or uuid.uuid4().hex
         if depth == 0:
             self.last_team_id = team_id
             self.on_event(f"> team run: {entry_name} (orchestrator {entry})")
-        eff = self.loaded.team.effective_manifest(entry)   # raises if severed/deep
+        eff = team.effective_manifest(entry)   # raises if severed/deep
         sid = self.store.create_session()
         self.store.team_session_add(team_id, sid, entry, parent_session, depth)
         self.sessions[entry] = sid
@@ -379,13 +433,14 @@ class TeamRunner:
         tools = dict(self.tools_factory(eff))
         kernel_policy_state = {"count": {}, "completed": set(), "denied": set()}
         spec_policy = self.loaded.specs[entry].policy
-        if self.loaded.team.edges.get(entry):
+        if team.edges.get(entry):
             # Grant the framework `delegate` tool to an orchestrator (it is not a
             # declared capability, so it is exempt from the widening check).
             import dataclasses
             eff = dataclasses.replace(eff, tools=eff.tools | {"delegate"})
             tools["delegate"] = self._delegate_tool(entry, team_id, depth, sid,
-                                                    spec_policy, kernel_policy_state)
+                                                    spec_policy, kernel_policy_state,
+                                                    team)
         # Tell the model its EFFECTIVE grants (post-attenuation, incl. the
         # delegate grant) — derived from the manifest, so it cannot overstate.
         grant_block = _caps_context(eff)
@@ -446,7 +501,8 @@ class TeamRunner:
         return denied > 0 and execed == 0
 
     def _delegate_tool(self, parent: str, team_id: str, depth: int,
-                       parent_session: str, policy: dict, state: dict) -> ToolSpec:
+                       parent_session: str, policy: dict, state: dict,
+                       team: Team) -> ToolSpec:
         led = Ledger(self.store)
         mb = Mailbox(self.store, team_id)
         max_per = policy.get("max_delegations_per_child")
@@ -463,7 +519,7 @@ class TeamRunner:
                 return "CANCELLED: team run cancelled; no further delegation"
             child = str(args.get("agent", ""))
             subtask = str(args.get("task", ""))
-            allowed = self.loaded.team.edges.get(parent, [])
+            allowed = team.edges.get(parent, [])
             if child not in allowed:
                 led.append(parent_session, {"type": "delegate_denied", "parent": parent,
                                             "child": child, "reason": "not_a_delegate"})
@@ -489,7 +545,7 @@ class TeamRunner:
                 self.on_event(f"  x policy: max delegations to {child} reached")
                 return f"DENIED by policy: max {max_per} delegations to {child!r} reached"
             try:
-                eff = self.loaded.team.effective_manifest(child)
+                eff = team.effective_manifest(child)
             except DelegationError as e:
                 led.append(parent_session, {"type": "delegate_denied", "parent": parent,
                                             "child": child, "reason": f"severed: {e}"})

@@ -1,0 +1,97 @@
+{
+  "framework_id": "iso-42001-2023",
+  "name": "ISO/IEC 42001:2023 — AI Management System",
+  "version": "2023",
+  "authority": "ISO/IEC",
+  "url": "https://www.iso.org/standard/81230.html",
+  "controls": [
+    {
+      "id": "A.6.2.6",
+      "name": "AI System Impact Assessment",
+      "family": "Planning",
+      "objective": "Assess impact of AI system on individuals, groups and societies.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.classification", "policy.classification_envelope"],
+        "required_signals": ["impact classification recorded per agent"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "A.6.2.8",
+      "name": "AI System Verification and Validation",
+      "family": "Planning",
+      "objective": "Verify and validate AI system meets specified objectives.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs"],
+        "required_signals": ["validation runs present", "verdict GO"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "A.7.4",
+      "name": "Data Quality for AI Systems",
+      "family": "AI System Lifecycle",
+      "objective": "Ensure quality of data used by AI systems.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.args_hash", "ledger.classification"],
+        "required_signals": ["all inputs hashed", "classification tagged"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "A.8.2",
+      "name": "AI System Operations",
+      "family": "Operations",
+      "objective": "Establish operational controls for AI system lifecycle.",
+      "provenance_mapping": {
+        "evidence_sources": ["control_plane.state"],
+        "required_signals": ["pause/quarantine/kill_all operational"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "A.8.3",
+      "name": "AI System Reporting of Concerns",
+      "family": "Operations",
+      "objective": "Enable interested parties to report concerns about AI systems.",
+      "provenance_mapping": {
+        "evidence_sources": ["operator_queue"],
+        "required_signals": ["concerns escalation path documented (operator queue)"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "A.9.2",
+      "name": "Documentation of AI System",
+      "family": "Performance Evaluation",
+      "objective": "Document AI system characteristics, operations, decisions.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entries", "policy.bundles"],
+        "required_signals": ["every decision logged with reason"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "A.9.3",
+      "name": "Monitoring of AI System",
+      "family": "Performance Evaluation",
+      "objective": "Continuously monitor AI system.",
+      "provenance_mapping": {
+        "evidence_sources": ["monitors.drift_alerts", "ledger.ingest_lag_ms"],
+        "required_signals": ["continuous ingest", "drift rules active"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "A.10.2",
+      "name": "Incident Management for AI Systems",
+      "family": "Improvement",
+      "objective": "Manage incidents related to AI systems.",
+      "provenance_mapping": {
+        "evidence_sources": ["control_plane.last_operator_action", "monitors.drift_alerts"],
+        "required_signals": ["incidents recorded with operator action"],
+        "preventive_control": true
+      }
+    }
+  ]
+}

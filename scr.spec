@@ -5,7 +5,7 @@ a = Analysis(
     ['installers\\windows\\freeze\\entry_scr.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\dev\\selfconnect-runtime\\scr\\_evidence_verifier.py', 'scr')],
+    datas=[('C:\\dev\\selfconnect-runtime\\scr\\_evidence_verifier.py', 'scr'), ('C:\\dev\\selfconnect-runtime\\scr\\frameworks\\data', 'scr/frameworks/data')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

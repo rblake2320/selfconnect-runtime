@@ -1,0 +1,86 @@
+{
+  "framework_id": "eu-ai-act-2024",
+  "name": "EU AI Act (Regulation 2024/1689)",
+  "version": "2024",
+  "authority": "European Union",
+  "url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+  "controls": [
+    {
+      "id": "Art.9",
+      "name": "Risk Management System",
+      "family": "High-Risk AI Systems",
+      "objective": "Establish, implement, document, maintain a risk management system.",
+      "provenance_mapping": {
+        "evidence_sources": ["policy.bundle.current", "monitors.drift_alerts"],
+        "required_signals": ["policy bundle versioned", "drift monitor active"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "Art.10",
+      "name": "Data and Data Governance",
+      "family": "High-Risk AI Systems",
+      "objective": "Use training, validation, testing data of appropriate quality.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.args_hash"],
+        "required_signals": ["inputs hashed for provenance"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "Art.12",
+      "name": "Record-Keeping",
+      "family": "High-Risk AI Systems",
+      "objective": "Automatically log events while operating.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entries"],
+        "required_signals": ["continuous signed logging"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "Art.13",
+      "name": "Transparency and Provision of Information",
+      "family": "High-Risk AI Systems",
+      "objective": "Be sufficiently transparent to enable deployers to interpret output.",
+      "provenance_mapping": {
+        "evidence_sources": ["ledger.entry.decision_reason"],
+        "required_signals": ["decision_reason populated"],
+        "preventive_control": false
+      }
+    },
+    {
+      "id": "Art.14",
+      "name": "Human Oversight",
+      "family": "High-Risk AI Systems",
+      "objective": "Designed to be effectively overseen by natural persons.",
+      "provenance_mapping": {
+        "evidence_sources": ["operator_queue", "control_plane.last_operator_action"],
+        "required_signals": ["operator queue has activity", "control plane operator actions logged"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "Art.15",
+      "name": "Accuracy, Robustness and Cybersecurity",
+      "family": "High-Risk AI Systems",
+      "objective": "Achieve appropriate level of accuracy, robustness, cybersecurity.",
+      "provenance_mapping": {
+        "evidence_sources": ["red_team.runs", "identity.key_algorithm"],
+        "required_signals": ["adversarial coverage >= 85%", "FIPS crypto"],
+        "preventive_control": true
+      }
+    },
+    {
+      "id": "AnnexIV",
+      "name": "Technical Documentation",
+      "family": "Documentation",
+      "objective": "Maintain technical documentation per Annex IV.",
+      "provenance_mapping": {
+        "evidence_sources": ["exporter.bundle"],
+        "required_signals": ["signed evidence bundle generated"],
+        "preventive_control": false
+      }
+    }
+  ]
+}

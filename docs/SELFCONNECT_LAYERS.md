@@ -4,6 +4,36 @@
 Generated 2026-09-01 from three read-only sweeps: PKA SDK (`C:\Users\techai\PKA testing\selfconnect`),
 projects-2 (`…\Desktop\projects 2\selfconnect_{plugins,audio}`, `selfconnect-alt`), and 9 GitHub repos.
 
+## DECISIONS (Ron, 2026-09-01) — authoritative
+
+- **G-A:** SCR is canonical. `selfconnect-terminal` v3 becomes the **UI client over SCR's API**;
+  its engine (loop/ledger/providers) is **RETIRED: superseded by SCR**. Harvest only its unique
+  capabilities (tiered memory, MCP server mode, context-gauge) as SCR layers (order #7).
+- **G-B:** `PKA testing/selfconnect` is the **source of truth**. `selfconnect` repo + `UncNeph/pka`
+  are archives — consulted only for source PKA lacks. **One row per layer, no triple-count.**
+- **G-C:** `launch/` + `services/` source **NOT FOUND** anywhere (PKA SDK pyc-only; archive repos
+  lack the dirs entirely; absent from OneDrive C:/D:, D:\backups, .local_archives). Ruling:
+  **rebuild fresh on SCR** (a harness-era boot layer rebuilt on the runtime that replaces the
+  harness). Decompile the `.pyc` for **reference only**, never as the ported artifact. Deferred to
+  Tier-S/H (does not block order #1).
+- **G-D:** HOPE parked.
+- **RETIRED — do NOT port** (superseded by an SCR-native feature):
+  | Retired layer | Replaced by (SCR feature) |
+  |---|---|
+  | Codex-chime tone detector (audio) | SCR native readiness/ack events |
+  | CC TUI-prompt approval watchers (`approval_partner`/`telegram`/`peer_watcher`/`claudego`/`approve_codex`/`approve_gemini`) | SCR kernel HITL approval gate (`approval_id`) |
+  | `sc_spawn` claude/`cmd /k claude` launch + CC-hook ACK | SCR native team spawn + delegation events |
+  | `sc_hooks` / `sc_hook_emit` (`.claude/settings.local.json`) | SCR event bus |
+  | `sc_transcript` (reads `~/.claude/projects/*.jsonl`) | SCR session store + hash-chained ledger |
+  | `selfconnect-terminal` v3 engine (loop/ledger/providers) | SCR kernel/ledger/model_factory |
+
+- **PORT ORDER (authoritative):** 1) Provenance/Sentinel · 2) `sc_local_agent_runtime`+`sc_qwen_core`
+  · 3) crypto/identity/governance kernel (`sc_identity`/PCTC, `sc_firewall`, `sc_pq`, migration/assignment)
+  · 4) `sc_tasks` A2A fabric + transport primitives · 5) plugin system + enterprise governed_runtime
+  · 6) Tier-H welds one at a time (rewrite shown before each) · 7) v3 harvest layers.
+- **Gate:** port #1 only; signed + self-tested live on qwen through `scr.exe` + Ron runs
+  `verify_run.ps1`; do NOT start #2 until Ron says VERIFIED.
+
 ## How to read this
 - **Tier** — P = portable to SCR today, S = needs a transport/event shim, H = welded to a
   harness (Claude Code / Codex / Gemini), X = stub / duplicate / out-of-scope.

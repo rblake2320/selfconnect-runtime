@@ -1,3 +1,5 @@
-# Named team aliases → entry orchestrator agent.
+# Named team aliases → entry orchestrator agent. Each alias names one team;
+# the package is a FOREST of teams (each validated as an independent tree).
 teams:
   sce.security-team: lead
+  sce.compliance: compliance
