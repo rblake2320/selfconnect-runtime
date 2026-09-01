@@ -411,3 +411,51 @@ def test_tool_exec_records_primary_arg_for_all_tools():
     assert _arg_path({"url": "http://h/x"}) == {"url": "http://h/x"}
     assert _arg_path({"binary": "git", "args": ["status"]}) == {"binary": "git"}
     assert _arg_path({"nothing": 1}) == {}
+
+
+# -------- transient model-call errors retry; a good run survives a blip
+def test_transient_model_error_retries_then_succeeds():
+    """RUN-C2 live: the Spark reset the connection on the final turn (WinError
+    10054) and the run died model_error after correct work. A bounded retry on
+    transient faults must recover; a non-transient error must NOT retry."""
+    from scr.capability import CapabilityManifest
+    from scr.kernel import Kernel
+
+    class _Flaky:
+        def __init__(self): self.calls = 0
+        def complete(self, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                raise ConnectionResetError(10054, "forcibly closed")
+            return ModelResponse("recovered after a blip")
+
+    store = Store(":memory:")
+    k = Kernel(store, _Flaky(), {}, CapabilityManifest())
+    k.model_retry_backoff = 0.0                      # no real sleep in the test
+    sid = store.create_session()
+    res = k.run(sid, "go")
+    assert res.stopped_reason == "completed"
+    assert res.final_text == "recovered after a blip"
+    ev = [json.loads(r["event"]) for r in store.conn.execute(
+        "SELECT event FROM ledger WHERE session_id=? ORDER BY seq", (sid,))]
+    assert any(e.get("type") == "model_retry" for e in ev)   # retry is a chain fact
+
+
+def test_non_transient_model_error_does_not_retry():
+    from scr.capability import CapabilityManifest
+    from scr.kernel import Kernel
+
+    class _BadRequest:
+        def __init__(self): self.calls = 0
+        def complete(self, messages, tools):
+            self.calls += 1
+            raise ValueError("malformed request")     # not transient
+
+    store = Store(":memory:")
+    adapter = _BadRequest()
+    k = Kernel(store, adapter, {}, CapabilityManifest())
+    k.model_retry_backoff = 0.0
+    sid = store.create_session()
+    res = k.run(sid, "go")
+    assert res.stopped_reason == "model_error"
+    assert adapter.calls == 1                          # NOT retried

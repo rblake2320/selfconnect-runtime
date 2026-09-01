@@ -244,7 +244,8 @@ class Kernel:
                 session_id, "MODEL_CALL_INTENT", {"iteration": iteration}
             )
             try:
-                resp: ModelResponse = self.adapter.complete(messages, tool_defs)
+                resp: ModelResponse = self._model_call_with_retry(
+                    session_id, iteration, messages, tool_defs)
             except Exception as e:  # noqa: BLE001 — same class as RUN-E's P0:
                 # model-facing I/O (timeouts, network, server garbage, parse
                 # failures) must stop the run GRACEFULLY, not stack-trace the
@@ -509,6 +510,42 @@ class Kernel:
         })
         self._ledger_tool_error(session_id, call.name, result)
         return result
+
+    # Transient network faults (a forcibly-closed TCP connection, a read
+    # timeout, a briefly-unreachable endpoint) should not kill a run whose
+    # work is otherwise fine. RUN-C2 (2026-09-01) proved this live: the Spark's
+    # Ollama reset the connection (WinError 10054) on the FINAL turn, after the
+    # agent had already produced correct output — the run died model_error for
+    # a blip. A bounded retry BEFORE the journal MODEL_CALL_DONE is crash-safe
+    # (no DONE record is written until a call actually succeeds, so recovery is
+    # unaffected). Non-transient errors (bad request, parse) are not retried.
+    _TRANSIENT = (ConnectionError, ConnectionResetError, ConnectionAbortedError,
+                  TimeoutError)
+    model_retries: int = 3
+    model_retry_backoff: float = 2.0
+
+    def _is_transient(self, e: Exception) -> bool:
+        if isinstance(e, self._TRANSIENT):
+            return True
+        # urllib/socket surface some resets as OSError with a WinError code.
+        return isinstance(e, OSError) and getattr(e, "winerror", None) in (
+            10053, 10054, 10060, 10061)
+
+    def _model_call_with_retry(self, session_id, iteration, messages, tool_defs):
+        last = None
+        for attempt in range(1, self.model_retries + 1):
+            try:
+                return self.adapter.complete(messages, tool_defs)
+            except Exception as e:  # noqa: BLE001
+                last = e
+                if attempt >= self.model_retries or not self._is_transient(e):
+                    raise
+                self.ledger.append(session_id, {
+                    "type": "model_retry", "iteration": iteration,
+                    "attempt": attempt, "class": type(e).__name__,
+                    "detail": str(e)[:160]})
+                time.sleep(self.model_retry_backoff * attempt)
+        raise last  # unreachable
 
     def _ledger_tool_error(self, session_id: str, tool: str, result: str) -> None:
         """RUN-D correction: a tool that executes and RETURNS an error string
