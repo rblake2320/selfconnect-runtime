@@ -15,7 +15,7 @@ it passed. Layer list + port order come from `docs/SELFCONNECT_LAYERS.md`
 | Layer | Ported (signed in pkg) | Self-test live on qwen3.6:27b | Verified by Ron |
 |---|---|---|---|
 | **1. Provenance / Sentinel** (`sce.compliance`) | ✅ `06ea324`, signed | ✅ 2026-09-01 — mapped a real prior run (99 events) → **16/45 controls**, VERIFIED, `compliance_map` in the chain | ✅ **VERIFIED by Ron 2026-09-01** |
-| **2. `sc_local_agent_runtime` + `sc_qwen_core`** (`sce.local-agent`) | ✅ signed in selfconnect-enterprise (operating knowledge + observe tools; Win32 mesh tools deferred to Tier-H) | ⏳ live run in flight (`build/liverunC2-home`) — a local qwen model observes real SC artifacts, no CC | ⬜ pending `verify_run.ps1 -Home build\liverunC2-home` |
+| **2. `sc_local_agent_runtime` + `sc_qwen_core`** (`sce.local-agent`) | ✅ `3a47eca`, signed (operating knowledge + observe tools; Win32 mesh tools deferred to Tier-H) | ✅ 2026-09-01 — local qwen (no CC) read 3 real SC files, wrote a grounded `observation.md`, **[completed]**, VERIFIED, 4.4 min, 0 denials. (1st run hit a Spark connection reset on the final turn → model_error → drove the `39f954c` bounded-retry fix; clean re-run.) | ⬜ pending `verify_run.ps1 -Home build\liverunC2-home` |
 | 3. crypto/identity/governance kernel | | | |
 | 4. `sc_tasks` A2A fabric + transport | | | |
 | 5. plugin system + enterprise governed_runtime | | | |
