@@ -94,7 +94,8 @@ def _parse_agents(agent_docs: list[dict], workspace: str) -> dict[str, AgentSpec
         name = d["name"]
         specs[name] = AgentSpec(
             name=name, role=d.get("role", ""),
-            system_prompt=(d.get("system_prompt") or f"You are the {name} agent.").strip(),
+            system_prompt=(d.get("system_prompt") or f"You are the {name} agent.")
+            .strip().replace("${WORKSPACE}", workspace),
             manifest=_manifest_from_caps(d.get("capabilities") or {}, workspace),
             delegates=tuple(d.get("delegates") or ()),
             policy=dict(d.get("delegation_policy") or {}),
@@ -223,10 +224,31 @@ def _eff_hash(m: CapabilityManifest) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _caps_context(m: CapabilityManifest) -> str:
+    """Render an agent's EFFECTIVE grants as a context block appended to its
+    system prompt. RUN-B live finding: agents were granted real fs roots but
+    never TOLD them, so the model blind-guessed container paths (/, /workspace)
+    and every call was denied. Deny-by-default only works if the model can see
+    what IS granted — derived from the attenuated manifest (the truth), never
+    authored prose."""
+    def fmt(items):
+        return ", ".join(sorted(items)) if items else "(none)"
+    return (
+        "[capability grant — authoritative, from your signed manifest]\n"
+        f"tools: {fmt(m.tools)}\n"
+        f"readable roots: {fmt(m.fs_read_roots)}\n"
+        f"writable roots: {fmt(m.fs_write_roots)}\n"
+        f"network hosts: {fmt(m.net_hosts)}\n"
+        "Anything outside these grants is denied. Use these exact root paths "
+        "in fs_list/fs_read — do not guess other paths."
+    )
+
+
 class TeamRunner:
     def __init__(self, store: Store, loaded: LoadedTeam,
                  adapter_factory: AdapterFactory, tools_factory: ToolsFactory,
-                 policy=None, max_depth: int = 4, sandbox=None, on_event=None):
+                 policy=None, max_depth: int = 4, sandbox=None, on_event=None,
+                 provenance: Optional[dict] = None):
         self.store = store
         self.loaded = loaded
         self.adapter_factory = adapter_factory
@@ -238,6 +260,9 @@ class TeamRunner:
         self.sessions: dict[str, str] = {}     # agent -> its session (last run)
         self.last_team_id: Optional[str] = None
         self._cancel = threading.Event()
+        # Which signed package governs this run (name/version/content hash).
+        # Ledgered into the lead session so the evidence bundle can prove it.
+        self.provenance = dict(provenance or {})
 
     def revoke(self, agent: str) -> None:
         self.loaded.team.revoke(agent)
@@ -260,6 +285,11 @@ class TeamRunner:
         sid = self.store.create_session()
         self.store.team_session_add(team_id, sid, entry, parent_session, depth)
         self.sessions[entry] = sid
+        if depth == 0 and self.provenance:
+            # Provenance INSIDE the lead session's hash chain — tamper-evident,
+            # so the bundle can prove which signed package governed the run.
+            Ledger(self.store).append(sid, {"type": "provenance",
+                                            **self.provenance})
 
         tools = dict(self.tools_factory(eff))
         kernel_policy_state = {"count": {}, "completed": set(), "denied": set()}
@@ -271,9 +301,12 @@ class TeamRunner:
             eff = dataclasses.replace(eff, tools=eff.tools | {"delegate"})
             tools["delegate"] = self._delegate_tool(entry, team_id, depth, sid,
                                                     spec_policy, kernel_policy_state)
+        # Tell the model its EFFECTIVE grants (post-attenuation, incl. the
+        # delegate grant) — derived from the manifest, so it cannot overstate.
+        sys_prompt = (self.loaded.specs[entry].system_prompt
+                      + "\n\n" + _caps_context(eff))
         kernel = Kernel(self.store, self.adapter_factory(entry), tools, eff,
-                        system_prompt=self.loaded.specs[entry].system_prompt,
-                        policy=self.policy)
+                        system_prompt=sys_prompt, policy=self.policy)
         kernel.cancel_check = self._cancel.is_set    # team cancel reaches every level
         if spec_policy.get("required_children"):
             kernel.finalize_guard = self._finalize_guard(spec_policy, kernel_policy_state)
@@ -316,6 +349,7 @@ class TeamRunner:
         mb = Mailbox(self.store, team_id)
         max_per = policy.get("max_delegations_per_child")
         no_redelegate = bool(policy.get("no_redelegate_after_denial"))
+        need_nonempty = bool(policy.get("require_nonempty_result"))
 
         def _policy(child, rule, decision, reason):
             led.append(parent_session, {"type": "policy", "parent": parent,
@@ -372,6 +406,14 @@ class TeamRunner:
                 _policy(child, "no_redelegate_after_denial", "marked_denied",
                         "child run ended with all tool calls denied")
                 self.on_event(f"  ⚠ {child} run was all-denied (fs/tool access)")
+            elif need_nonempty and not text.strip():
+                # RUN-B live finding: a child returned 0 chars yet satisfied
+                # required_children — a model can complete a requirement
+                # empty-handed. Zero output is a mechanical ledger fact, so it
+                # is enforceable: don't count it, and say so in the ledger.
+                _policy(child, "require_nonempty_result", "not_counted",
+                        "child completed but returned an empty result")
+                self.on_event(f"  ⚠ {child} returned empty — not counted as completed")
             else:
                 state["completed"].add(child)
                 _policy(child, "required_children", "completed", "child completed")

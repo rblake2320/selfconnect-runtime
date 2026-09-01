@@ -327,11 +327,58 @@ lead  (session 3e1bce3b, depth 0)   22 events
   (334 pass + 7 skip)**. The junk directory RUN A created was removed.
   Frozen `scr.exe`/MSI rebuild with this fix is pending RUN B's completion
   (Windows locks the running exe).
-- **RUN B (workspace binding, checks 2/3): in flight** on the Spark with the
-  corrected `--workspace "C:/dev/selfconnect-runtime"`, to test whether real file
-  access yields file/line-specific findings. Result appended when it lands.
-  (RUN B launched from the pre-fix frozen exe; the workspace it was given is
-  valid, so the fail-fast gap does not affect its result.)
+### Live proof — RUN B (valid workspace), per the ledger
+
+Corrected `--workspace "C:/dev/selfconnect-runtime"`, same model/task. Sealed
+bundle **RESULT: VERIFIED**; wall **772 s (~13 min)**; tree depth 0→1, 5
+sessions. Ledger dump: `DELEGATIONS [researcher, researcher, auditor, auditor]`,
+`COMPLETED_PER_LEDGER [auditor, researcher]`, `AUDITOR_RAN True`.
+
+- **Policy held under a live retry storm:** both children capped at exactly 2
+  (10+ `max_delegations_per_child` denials ledgered while qwen retried).
+  Auditor ran again — required_children is now 2-for-2 live.
+- **Check 2 STILL failed with a VALID workspace — root cause found, and it is
+  a real runtime gap:** `${WORKSPACE}` was substituted only into capability
+  manifest roots; **nothing ever told the model its granted paths.** The
+  researcher blind-guessed container roots in RUN A and in RUN B returned
+  **0 chars without attempting a single tool call**. Deny-by-default is
+  unusable if the model cannot see what IS granted.
+- **New loophole discovered (RUN B):** a child returning 0 chars **counted as
+  completed** and satisfied `required_children` — a model can satisfy the
+  policy empty-handed (`_child_all_denied` needs denied>0; doing nothing at
+  all sailed through).
+- **Provenance gap confirmed twice:** both VERIFIED bundles showed
+  `package: {}` — the evidence could not answer "which signed package governed
+  this run".
+- **Prose-vs-ledger divergence, third occurrence:** RUN B's report blamed
+  "worker crashes"; the ledger shows zero crashes, just empty returns. The
+  pattern is systematic: the model narrates plausible causes for gaps in its
+  knowledge. Only the ledger is evidence.
+
+### Fixes from the RUN A/B findings (all tested; suite 345 = 338 pass + 7 skip)
+
+- **Capability-grant context injection** (`_caps_context`): every team agent's
+  system prompt now carries a block derived from its EFFECTIVE (attenuated)
+  manifest — tools, readable/writable roots, net hosts — so the model is told
+  exactly what it was granted and nothing more (data-driven, cannot overstate).
+  `${WORKSPACE}` is also substituted in authored system prompts. Tests: the
+  adapter provably receives the resolved workspace root.
+- **`require_nonempty_result` policy rule:** an empty child result is ledgered
+  `not_counted` and does not satisfy `required_children` (0 chars is a
+  mechanical ledger fact, so it is enforceable). On in the enterprise package.
+- **Run provenance in evidence:** the governing package (name, version,
+  key_id, content SHA-256) is ledgered INSIDE the lead session's hash chain at
+  run start and surfaced as the bundle's `package` field — the evidence now
+  proves which signed package governed the run, tamper-evidently.
+- **Build reproducibility (found while rebuilding):** the frozen-exe build
+  was tribal knowledge → scripted (`installers/windows/build_frozen.sh`);
+  `build_enterprise_pkg.py` generated a fresh keypair but never wrote
+  `publisher_key.txt`, so a stale pin would silently reject each fresh build →
+  the pin is now written next to the package. Frozen `scr.exe` smoke-tested:
+  install-against-pin OK, doctor OK, **workspace fail-fast fires in the frozen
+  artifact** (resolved path + raw argument, exit 1).
+- **RUN C in flight** with all three fixes (new exe + re-signed package) to
+  test checks 2/3: real file reads and file/line-specific findings.
 
 ## Installer / packaging closure (2026-08-31)
 

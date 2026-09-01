@@ -147,3 +147,107 @@ def test_no_redelegate_after_all_denied_blocks_retry_loop(tmp_path):
     assert sum(1 for e in ev if e.get("type") == "delegate") == 1     # spawned once
     assert any(e.get("type") == "policy" and e.get("rule") == "no_redelegate_after_denial"
                and e.get("decision") == "denied" for e in ev)          # retry blocked + ledgered
+
+
+# ------------------------------------------------- require_nonempty_result
+def test_empty_child_result_not_counted_as_completed(tmp_path):
+    # RUN-B live finding: a child returned 0 chars yet satisfied
+    # required_children. With require_nonempty_result the empty run is not
+    # counted; finalize stays refused until a NON-empty child run completes.
+    agents = {
+        "lead": {"capabilities": CAPS, "delegates": ["researcher"],
+                 "delegation_policy": {"required_children": ["researcher"],
+                                       "require_nonempty_result": True}},
+        "researcher": {"capabilities": CAPS},
+    }
+    scripts = {
+        "lead": [ModelResponse("", (_delegate("researcher", "t1"),)),
+                 ModelResponse("done"),                      # refused: empty run not counted
+                 ModelResponse("", (_delegate("researcher", "t2"),)),
+                 ModelResponse("final with real findings")],
+        "researcher": [ModelResponse(""),                    # empty-handed
+                       ModelResponse("finding: real content")],
+    }
+    runner, store = _runner(tmp_path, agents, scripts)
+    res = runner.run("lead", "go")
+    assert res.stopped_reason == "completed"
+    assert res.final_text == "final with real findings"
+    ev = _events(store, res.session_id)
+    assert any(e.get("type") == "policy" and e.get("rule") == "require_nonempty_result"
+               and e.get("decision") == "not_counted" for e in ev)
+    assert any(e.get("decision") == "finalize_refused" for e in ev)
+
+
+# ------------------------------------------------- caps context injection
+class _PromptCapture:
+    """Adapter that records the system prompt it is given, then finalizes."""
+    def __init__(self):
+        self.system = []
+
+    def complete(self, messages, tools):
+        self.system.append(next(
+            (m["content"] for m in messages if m["role"] == "system"), ""))
+        return ModelResponse("ok")
+
+
+def test_agent_is_told_its_effective_grants(tmp_path):
+    # RUN-B live finding: agents had real fs roots granted but were never TOLD
+    # them — the model blind-guessed /workspace etc. and every call was denied.
+    # The runtime must inject the EFFECTIVE grants into the system prompt.
+    agents = {"solo": {"capabilities": CAPS}}
+    src = _write(tmp_path, agents)
+    ws = str(tmp_path / "ws")
+    loaded = load_team_from_dir(src, ws)
+    store = Store(":memory:")
+    cap = _PromptCapture()
+    runner = TeamRunner(store, loaded, lambda a: cap, lambda m: {})
+    runner.run("solo", "task")
+    sys_prompt = cap.system[0]
+    assert "capability grant" in sys_prompt
+    assert os.path.abspath(ws) in sys_prompt      # the RESOLVED workspace root
+    assert "fs_read" in sys_prompt
+
+
+def test_workspace_placeholder_substituted_in_authored_prompt(tmp_path):
+    agents = {"solo": {"capabilities": CAPS,
+                       "system_prompt": "Review the repo at ${WORKSPACE}."}}
+    ws = str(tmp_path / "ws")
+    loaded = load_team_from_dir(_write(tmp_path, agents), ws)
+    assert ws in loaded.specs["solo"].system_prompt
+    assert "${WORKSPACE}" not in loaded.specs["solo"].system_prompt
+
+
+# ------------------------------------------------------------- provenance
+def test_provenance_ledgered_and_surfaced_in_team_bundle(tmp_path):
+    # RUN A+B finding: both VERIFIED bundles showed package:{} — the evidence
+    # could not answer "which signed package governed this run". Provenance is
+    # ledgered inside the lead session's hash chain and surfaced in the bundle.
+    from scr.evidence import export_team_bundle
+    import json as _json
+    import zipfile
+    agents = {"lead": {"capabilities": CAPS, "delegates": ["researcher"]},
+              "researcher": {"capabilities": CAPS}}
+    scripts = {"lead": [ModelResponse("", (_delegate("researcher"),)),
+                        ModelResponse("done")],
+               "researcher": [ModelResponse("r")]}
+    src = _write(tmp_path, agents)
+    loaded = load_team_from_dir(src, str(tmp_path / "ws"))
+    store = Store(":memory:")
+    adapters = {a: MockAdapter(list(s)) for a, s in scripts.items()}
+    prov = {"package": "selfconnect-enterprise", "version": "1.0.0",
+            "key_id": "k1", "content_sha256": "ab" * 32}
+    runner = TeamRunner(store, loaded, lambda a: adapters[a], lambda m: {},
+                        provenance=prov)
+    res = runner.run("lead", "go")
+    # 1) inside the lead session's hash chain
+    ev = _events(store, res.session_id)
+    pe = next(e for e in ev if e.get("type") == "provenance")
+    assert pe["package"] == "selfconnect-enterprise"
+    assert pe["content_sha256"] == "ab" * 32
+    # 2) surfaced in the exported bundle without being passed explicitly
+    out = str(tmp_path / "t.scevidence")
+    export_team_bundle(store, runner.last_team_id, b"k" * 32, out)
+    with zipfile.ZipFile(out) as z:
+        bundle = _json.loads(z.read("bundle.json"))
+    assert bundle["package"]["package"] == "selfconnect-enterprise"
+    assert bundle["package"]["version"] == "1.0.0"

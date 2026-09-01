@@ -27,3 +27,6 @@ delegation_policy:
   required_children: [researcher, auditor]
   max_delegations_per_child: 2
   no_redelegate_after_denial: true
+  # RUN-B finding: a child returning 0 chars satisfied required_children.
+  # Empty output is a mechanical ledger fact — don't count it as completed.
+  require_nonempty_result: true

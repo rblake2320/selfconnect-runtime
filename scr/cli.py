@@ -214,6 +214,7 @@ def _run_team(cfg, args, target: str, task: str) -> int:
     runner_sb = SandboxRunner()
 
     loaded = None
+    provenance: dict = {}
     available: dict[str, list[str]] = {}
     for pkg in reg.list_installed():
         try:
@@ -223,6 +224,13 @@ def _run_team(cfg, args, target: str, task: str) -> int:
         available[pkg.name] = sorted(lt.specs) + [f"team:{a}" for a in lt.aliases]
         if target in lt.specs or target in lt.aliases:
             loaded = lt
+            # Provenance: which signed package governs this run — ledgered into
+            # the lead session so the evidence bundle can prove it.
+            import hashlib as _hashlib
+            with open(pkg.path, "rb") as f:
+                content_sha = _hashlib.sha256(f.read()).hexdigest()
+            provenance = {"package": pkg.name, "version": pkg.version,
+                          "key_id": pkg.key_id, "content_sha256": content_sha}
             break
     if loaded is None:
         listing = "; ".join(f"{p}: {v}" for p, v in available.items()) or "(none installed)"
@@ -233,7 +241,8 @@ def _run_team(cfg, args, target: str, task: str) -> int:
 
     trunner = TeamRunner(store, loaded, lambda a: adapter,
                          lambda m: build_native_tools(m, runner_sb),
-                         sandbox=runner_sb, on_event=progress)
+                         sandbox=runner_sb, on_event=progress,
+                         provenance=provenance)
     print(f"workspace: {workspace}", file=_sys.stderr, flush=True)
     result = trunner.run(target, task)
     print(f"team {target} [{result.stopped_reason}] session {result.session_id} "

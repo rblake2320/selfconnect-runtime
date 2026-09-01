@@ -31,10 +31,15 @@ def main() -> int:
     ks = Keystore()
     ks.add(pub)
     res = verify_package(out, ks)
+    # Write the pin next to the package so install --trust always matches THIS
+    # build (a stale publisher_key.txt silently rejects a fresh package).
+    pin_path = os.path.join(out_dir, "publisher_key.txt")
+    with open(pin_path, "w") as f:
+        f.write(pub + "\n")
     print(f"built:  {out}")
     print(f"signed: root={sig['merkle_root']} key_id={sig['key_id']}")
     print(f"verify: {'OK' if res.ok else 'FAIL ' + str(res.error)}")
-    print(f"pin this publisher key: {pub}")
+    print(f"pin this publisher key: {pub} (written to {pin_path})")
     return 0 if res.ok else 1
 
 

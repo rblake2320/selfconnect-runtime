@@ -93,6 +93,18 @@ def build_team_bundle(store: Store, team_id: str,
             "events": _read_session_events(store, sid),
             "seal": _read_seal(store, sid) or {},
         })
+    if package is None:
+        # Provenance is ledgered INSIDE the lead session's hash chain at run
+        # time; surface it here so the bundle answers "which signed package
+        # governed this run" without trusting anything outside the chain.
+        for m in members:
+            if m["depth"] == 0:
+                for row in _read_session_events(store, m["session_id"]):
+                    ev = json.loads(row["event"])
+                    if ev.get("type") == "provenance":
+                        package = {k: v for k, v in ev.items() if k != "type"}
+                        break
+                break
     return {
         "runtime_version": __version__,
         "package": package or {},
