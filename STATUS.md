@@ -474,9 +474,49 @@ sessions. Ledger dump: `DELEGATIONS [researcher, researcher, auditor, auditor]`,
   latency (NVMe box):** onefile 0.64–0.75 s vs onedir 0.56–0.57 s — the
   extraction tax here is ~0.1–0.2 s/spawn, smaller than feared, but onedir
   wins and removes the failure surface. MSI now 27.3 MB.
-- **RUN E in flight** — first run with all three legs standing: policy
-  enforced, workspace real, workers physically executing. Its bundle answers
-  the original question (files and lines, or not).
+### RUN E — the original question ANSWERED (per the VERIFIED ledger)
+
+Wall ~25 min. Team bundle exported + **RESULT: VERIFIED**, and the bundle's
+`package` field now carries live provenance (selfconnect-enterprise 1.0.0,
+key_id 7357d5f7, content sha a8684e04…) — no more `package: {}`.
+
+- **Check 1 — auditor ran: YES.** lead→researcher×2, lead→auditor; all
+  completed per the chain (auditor session, 14 events).
+- **Check 2 — real files read: YES. 28 paths in the chain**, including the
+  runtime's own source: kernel.py, capability.py, sandbox.py, signing.py,
+  vault.py, state.py, sessions.py, gateway.py, ledger.py, loader.py,
+  policy.py, registry.py. Two honest `tool_error FileNotFoundError` events
+  (model guessed a nonexistent file) folded and ledgered — the run continued.
+- **Check 3 — substance: YES.** The team WROTE `out/security-review-report.md`
+  (9.2 KB): file/function-specific findings — vault `sanitize()` dot
+  handling, `check_same_thread=False` (real), `_summarize` 160-byte
+  truncation, the 600 s Ollama default (real), exact dependency pins.
+  **Finding M2 (vault path traversal) was verified against the code and
+  empirically REFUTED** — 8/8 hostile names land inside the vault dir
+  (separators stripped before join); kept as a permanent adversarial
+  regression (`test_vault_name_sanitization_defeats_traversal`). A grounded
+  but wrong claim is exactly what a customer security team triages — the
+  runtime delivered reviewable, falsifiable claims. Report preserved in the
+  run home and Owner's Inbox.
+- **Finding #6 (P0, the last of the night): a malformed model tool call
+  crashed the entire runtime.** After the review was substantively done, the
+  lead called `fs_write` WITHOUT `content`; `args["content"]` raised KeyError
+  through the tool fn and the frozen process died mid-run. A model must never
+  be able to kill the runtime with a bad argument. **Fixed at both layers:**
+  every native tool validates required args (`TOOL ERROR [bad_args]`, a
+  corrective message the model can act on), and the kernel folds ANY tool-fn
+  exception (`TOOL ERROR [tool_exception]`, both exec paths) — ledgered as
+  chain facts either way. Reproduced exactly in
+  `test_malformed_tool_call_folds_instead_of_crashing` (a real kernel run
+  making the RUN-E call: survives, completes, ledgers `bad_args`).
+- **Also fixed:** `session export` of an empty/unknown id produced a 0-event
+  bundle that VERIFIED (a green checkmark on nothing) → now refused non-zero.
+- **Unplanned crash-survivability proof:** the process died mid-run, yet the
+  WAL store held every session; the team bundle was exported AFTER the crash
+  and VERIFIED — the founding claim demonstrated on a real, unstaged failure.
+- Suite **358 (351 pass + 7 skip)**. RUN F queued: same run on the fixed
+  artifacts, expected to complete cleanly end-to-end (report + ledger-derived
+  execution summary + in-run export).
 
 ## Installer / packaging closure (2026-08-31)
 

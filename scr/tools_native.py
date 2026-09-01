@@ -37,9 +37,22 @@ def _fold(result: dict[str, Any]) -> str:
     return f"TOOL ERROR [{result.get('error')}]: {result.get('detail', '')}"
 
 
+def _missing(args: dict, *keys: str):
+    """RUN-E: malformed model tool calls (missing/mistyped args) must fold to
+    a corrective error, not raise."""
+    bad = [k for k in keys if not isinstance(args.get(k), str)]
+    if bad:
+        return (f"TOOL ERROR [bad_args]: missing or non-string argument(s) "
+                f"{bad} — supply them and retry")
+    return None
+
+
 def build_native_tools(manifest: CapabilityManifest,
                        runner: SandboxRunner) -> dict[str, ToolSpec]:
     def fs_read(args: dict[str, Any]) -> str:
+        err = _missing(args, "path")
+        if err:
+            return err
         try:
             resolved = manifest.check_read(args["path"])
         except CapabilityDenied as e:
@@ -50,6 +63,9 @@ def build_native_tools(manifest: CapabilityManifest,
             cwd=_work_dir(manifest)))
 
     def fs_write(args: dict[str, Any]) -> str:
+        err = _missing(args, "path", "content")
+        if err:
+            return err
         try:
             resolved = manifest.check_write(args["path"])
         except CapabilityDenied as e:
@@ -60,6 +76,9 @@ def build_native_tools(manifest: CapabilityManifest,
             cwd=_work_dir(manifest)))
 
     def fs_list(args: dict[str, Any]) -> str:
+        err = _missing(args, "path")
+        if err:
+            return err
         try:
             resolved = manifest.check_read(args["path"])
         except CapabilityDenied as e:
@@ -70,6 +89,9 @@ def build_native_tools(manifest: CapabilityManifest,
             cwd=_work_dir(manifest)))
 
     def http_get(args: dict[str, Any]) -> str:
+        err = _missing(args, "url")
+        if err:
+            return err
         host = urllib.parse.urlsplit(args["url"]).hostname or ""
         try:
             manifest.check_net(host)
@@ -81,6 +103,9 @@ def build_native_tools(manifest: CapabilityManifest,
             cwd=_work_dir(manifest)))
 
     def proc_exec(args: dict[str, Any]) -> str:
+        err = _missing(args, "binary")
+        if err:
+            return err
         binary, argv = args["binary"], list(args.get("args", []))
         try:
             manifest.check_exec(binary, argv)

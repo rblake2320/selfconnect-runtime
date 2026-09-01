@@ -38,6 +38,19 @@ from .state import Store
 
 
 # ------------------------------------------------------------------ tools
+def _run_tool_fn(fn, call) -> str:
+    """A tool must NEVER kill the runtime. RUN-E live crash (2026-09-01): the
+    model called fs_write without 'content'; the raw KeyError propagated out of
+    the tool fn and took down the whole frozen process mid-team-run. ANY
+    exception from a tool folds to an error result the model can react to,
+    and _ledger_tool_error records it as a chain fact."""
+    try:
+        return fn(call.arguments)
+    except Exception as e:  # noqa: BLE001 — fold, never crash
+        return (f"TOOL ERROR [tool_exception]: {type(e).__name__}: "
+                f"{str(e)[:200]} (tool={call.name})")
+
+
 def _arg_path(args: dict) -> dict:
     """Evidence enrichment: for path-taking tools (fs_*), record WHICH path was
     touched (bounded) — "what did it actually read" is the first question a
@@ -332,7 +345,8 @@ class Kernel:
         original order."""
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(len(batch), 8)) as ex:
-            results = list(ex.map(lambda c: self.tools[c.name].fn(c.arguments), batch))
+            results = list(ex.map(
+                lambda c: _run_tool_fn(self.tools[c.name].fn, c), batch))
         for call, res in zip(batch, results):
             text = self._persist_precomputed(session_id, call, res)
             self._add_tool_msg(session_id, call, text)
@@ -465,7 +479,7 @@ class Kernel:
         if cached is not None:
             result = cached
         else:
-            result = spec.fn(call.arguments)
+            result = _run_tool_fn(spec.fn, call)
             self.store.tool_result_put(idem_key, session_id, call.name, result)
 
         self.store.journal_append(

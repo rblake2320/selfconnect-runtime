@@ -302,6 +302,13 @@ def cmd_session_export(args) -> int:
     # export the whole delegation tree as one bundle (team export always seals).
     team_id = args.session if store.team_members(args.session) else \
         store.team_id_for_session(args.session)
+    if not team_id and not store.conn.execute(
+            "SELECT 1 FROM sessions WHERE id=?",
+            (args.session,)).fetchone():
+        # RUN-E: an empty TEAMID produced a 0-event bundle that VERIFIED —
+        # a green checkmark on nothing. Unknown/empty ids are refused.
+        raise SystemExit(
+            f"no such session or team: {args.session!r} — nothing exported")
     if team_id:
         export_team_bundle(store, team_id, key, args.out)
         n = len(store.team_members(team_id))

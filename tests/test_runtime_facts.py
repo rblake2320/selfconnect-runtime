@@ -170,3 +170,88 @@ def test_tool_error_result_is_ledgered_and_summarized(tmp_path):
     te = [e for e in ev if e.get("type") == "tool_error"]
     assert te and te[0]["class"] == "worker_crash"      # chain fact, not prose
     assert "ERROR[worker_crash]" in res.final_text       # surfaced in summary
+
+
+# ------------------------------- RUN-E crash: a tool must never kill the run
+def test_malformed_tool_call_folds_instead_of_crashing(tmp_path):
+    """RUN E: qwen called fs_write without 'content'; the raw KeyError killed
+    the whole frozen process mid-team-run. Reproduce the exact call through a
+    real kernel run — it must fold to a TOOL ERROR, ledger it, and CONTINUE."""
+    from scr.capability import CapabilityManifest
+    from scr.kernel import Kernel
+    from scr.sandbox import SandboxRunner
+    from scr.tools_native import build_native_tools
+    ws = tmp_path / "ws"; (ws / "out").mkdir(parents=True)
+    manifest = CapabilityManifest(tools=frozenset({"fs_write"}),
+                                  fs_write_roots=(str(ws / "out"),),
+                                  fs_read_roots=(str(ws),))
+    tools = build_native_tools(manifest, SandboxRunner())
+    store = Store(":memory:")
+    adapter = MockAdapter([
+        ModelResponse("", (ToolCall("w1", "fs_write",
+                       {"path": str(ws / "out" / "r.md")}),)),   # NO content
+        ModelResponse("recovered and finished"),
+    ])
+    k = Kernel(store, adapter, tools, manifest)
+    sid = store.create_session()
+    res = k.run(sid, "write the report")
+    assert res.stopped_reason == "completed"          # runtime survived
+    assert res.final_text == "recovered and finished"
+    ev = [json.loads(r["event"]) for r in store.conn.execute(
+        "SELECT event FROM ledger WHERE session_id=? ORDER BY seq", (sid,))]
+    te = [e for e in ev if e.get("type") == "tool_error"]
+    assert te and te[0]["class"] == "bad_args"        # folded + chain fact
+
+
+def test_tool_fn_raising_any_exception_is_folded(tmp_path):
+    # defense in depth: even a tool whose fn RAISES cannot kill the kernel
+    from scr.capability import CapabilityManifest
+    from scr.kernel import Kernel
+    def bomb(args):
+        raise RuntimeError("boom")
+    tools = {"t": ToolSpec("t", bomb, idempotent=True)}
+    manifest = CapabilityManifest(tools=frozenset({"t"}))
+    store = Store(":memory:")
+    adapter = MockAdapter([
+        ModelResponse("", (ToolCall("c1", "t", {}),)),
+        ModelResponse("done"),
+    ])
+    k = Kernel(store, adapter, tools, manifest)
+    sid = store.create_session()
+    res = k.run(sid, "go")
+    assert res.stopped_reason == "completed"
+    ev = [json.loads(r["event"]) for r in store.conn.execute(
+        "SELECT event FROM ledger WHERE session_id=? ORDER BY seq", (sid,))]
+    assert any(e.get("type") == "tool_error"
+               and e.get("class") == "tool_exception" for e in ev)
+
+
+def test_session_export_refuses_unknown_or_empty_id(tmp_path, capsys):
+    # RUN E: `session export ""` produced a 0-event bundle that VERIFIED.
+    import pytest as _pytest
+    from scr.cli import main
+    home = str(tmp_path / "home")
+    main(["--home", home, "init"])
+    out = str(tmp_path / "x.scevidence")
+    for bad in ("", "deadbeef" * 4):
+        with _pytest.raises(SystemExit, match="no such session"):
+            main(["--home", home, "session", "export", bad, out,
+                  "--key", "ab" * 32])
+        assert not os.path.exists(out)
+
+
+# ---------------------- RUN-E review finding M2: vault traversal — REFUTED
+def test_vault_name_sanitization_defeats_traversal(tmp_path):
+    """qwen's security review (RUN E) claimed vault sanitize() permits ../
+    traversal. Empirically REFUTED — separators are stripped so every
+    hostile name lands inside the vault dir. Kept as a permanent
+    adversarial regression so it stays true."""
+    from scr.vault import Vault
+    v = Vault.__new__(Vault)
+    v.dir = str(tmp_path / "vaultdir")
+    attacks = ["..", r"..\..\evil", "../../evil", r"C:\Windows\x",
+               "a:b:stream", ".", r"..\..\..\Users\x", "....//....//etc"]
+    for name in attacks:
+        p = os.path.abspath(v._path(name))
+        assert os.path.commonpath([p, os.path.abspath(v.dir)]) == \
+            os.path.abspath(v.dir), f"escaped vault: {name!r} -> {p}"
